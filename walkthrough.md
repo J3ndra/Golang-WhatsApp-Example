@@ -8,6 +8,7 @@ We have successfully containerized your Go WhatsApp application and set up a Git
 
 ### 1. Created [Dockerfile](file:///home/endru/Code/kiw-test/Dockerfile)
 - A multi-stage Docker build config.
+- Copies both `go.mod` and `go.sum` to enable dependency caching while ensuring module checksums match during download.
 - Pulls from fully qualified registries (`docker.io/library/golang:1.26-alpine` and `docker.io/library/alpine:3.21`) to prevent search registry warnings on Podman.
 - Installs CA certificates in the runtime image to allow SSL requests (essential for calling WhatsApp's Graph API).
 - Uses Go compiler optimization flags (`-ldflags="-s -w"`) to reduce binary size.
