@@ -45,17 +45,33 @@ type Profile struct {
 }
 
 // Message represents an incoming WhatsApp message.
+// Type can be "text", "interactive", "image", "audio", etc.
 type Message struct {
-	From      string       `json:"from"`    // sender's phone number
-	ID        string       `json:"id"`      // WhatsApp message ID
-	Timestamp string       `json:"timestamp"`
-	Type      string       `json:"type"`              // "text", "image", "audio", etc.
-	Text      *TextContent `json:"text,omitempty"`
+	From        string               `json:"from"`                  // sender's phone number
+	ID          string               `json:"id"`                    // WhatsApp message ID
+	Timestamp   string               `json:"timestamp"`
+	Type        string               `json:"type"`                  // "text", "interactive", ...
+	Text        *TextContent         `json:"text,omitempty"`
+	Interactive *InteractiveContent  `json:"interactive,omitempty"` // set when Type == "interactive"
 }
 
 // TextContent holds the text body of a message.
 type TextContent struct {
 	Body string `json:"body"`
+}
+
+// InteractiveContent is set when a user taps a quick-reply button.
+// Meta sends Type "interactive" with a nested button_reply.
+type InteractiveContent struct {
+	// Type is "button_reply" for quick-reply buttons, "list_reply" for list rows.
+	Type        string      `json:"type"`
+	ButtonReply ButtonReply `json:"button_reply"`
+}
+
+// ButtonReply contains the ID and title of the button the user tapped.
+type ButtonReply struct {
+	ID    string `json:"id"`    // matches the id set when sending the button
+	Title string `json:"title"` // human-readable button label
 }
 
 // Status represents a message status update (sent, delivered, read).
