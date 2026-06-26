@@ -1,0 +1,12 @@
+services:
+  app:
+    image: ${CI_REGISTRY_IMAGE:latest}
+    container_name: kiw-test-app
+    restart: always
+    ports:
+      - "${PORT:-8080}:8080"
+    env_file:
+      - .env
+    # Standard security options for Podman compatibility
+    security_opt:
+      - no-new-privileges:true

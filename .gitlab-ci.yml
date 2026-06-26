@@ -1,0 +1,84 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  # Using fully-qualified Docker Hub images for gitlab-runner builds
+  IMAGE_BUILDER: docker.io/library/docker:24.0.7-dind
+  IMAGE_RUNNER: docker.io/library/docker:24.0.7
+
+build_image:
+  stage: build
+  image: $IMAGE_RUNNER
+  services:
+    - name: $IMAGE_BUILDER
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE:latest" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+  only:
+    - main
+
+deploy:
+  stage: deploy
+  image: docker.io/library/alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client bash
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+  script:
+    # SSH to VPS and deploy using Podman
+    - |
+      ssh $VPS_USER@$VPS_IP "
+        # Create deployment directory if not exists
+        mkdir -p ~/apps/kiw-test
+        cd ~/apps/kiw-test
+
+        # Log in to GitLab Container Registry on VPS
+        podman login -u '$CI_REGISTRY_USER' -p '$CI_REGISTRY_PASSWORD' '$CI_REGISTRY'
+
+        # Pull the latest image
+        podman pull '$CI_REGISTRY_IMAGE:latest'
+
+        # Write/Update the .env file with secrets from GitLab variables
+        cat << EOF > .env
+        CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
+        PORT=${PORT:-8080}
+        WHATSAPP_VERIFY_TOKEN=$WHATSAPP_VERIFY_TOKEN
+        WHATSAPP_PHONE_NUMBER_ID=$WHATSAPP_PHONE_NUMBER_ID
+        WHATSAPP_ACCESS_TOKEN=$WHATSAPP_ACCESS_TOKEN
+        GRAPH_API_BASE_URL=${GRAPH_API_BASE_URL:-https://graph.facebook.com}
+        WHATSAPP_API_VERSION=${WHATSAPP_API_VERSION:-v22.0}
+      EOF
+
+        # Write or update docker-compose.yml on the VPS
+        cat << 'EOF' > docker-compose.yml
+      $(cat docker-compose.yml)
+      EOF
+
+        # Run container using compose (handles podman-compose or docker-compose)
+        if command -v podman-compose &> /dev/null; then
+          podman-compose down && podman-compose up -d
+        elif command -v docker-compose &> /dev/null; then
+          docker-compose down && docker-compose up -d
+        else
+          # Fallback if no compose is installed (direct podman run)
+          podman stop kiw-test-app || true
+          podman rm kiw-test-app || true
+          podman run -d --name kiw-test-app \
+            -p \${PORT:-8080}:8080 \
+            --restart always \
+            --env-file .env \
+            \$CI_REGISTRY_IMAGE:latest
+        fi
+      "
+  only:
+    - main
