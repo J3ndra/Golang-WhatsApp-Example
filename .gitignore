@@ -28,3 +28,6 @@ main
 # System / Cache
 .DS_Store
 .gemini/
+
+# Database
+*.db
