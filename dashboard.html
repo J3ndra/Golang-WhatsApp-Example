@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Service Chat Console</title>
+    <!-- Tailwind CSS v4 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Google Fonts: Plus Jakarta Sans for premium typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* Custom scrollbar styling for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex bg-slate-50 text-slate-800 antialiased">
+
+    <!-- Sidebar Section -->
+    <aside id="sidebar-container" class="w-full md:w-[380px] lg:w-[420px] flex flex-col h-full bg-white border-r border-slate-200 shrink-0 z-20">
+        
+        <!-- Agent Header -->
+        <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <!-- Agent Avatar with initial -->
+                        <div class="w-11 h-11 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-700 flex items-center justify-center text-white font-semibold text-lg shadow-sm border border-emerald-100">
+                            SJ
+                        </div>
+                        <!-- Status Indicator dot -->
+                        <span id="agent-status-dot" class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></span>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-sm leading-tight">Sarah Jenkins</h3>
+                        <p class="text-xs text-slate-500">Senior CS Specialist</p>
+                    </div>
+                </div>
+
+                <!-- Status Selector Menu -->
+                <div class="relative">
+                    <button id="status-menu-btn" onclick="toggleStatusDropdown()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-100/50 cursor-pointer">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span id="agent-status-text">Online</span>
+                        <svg class="w-3.5 h-3.5 ml-0.5 text-emerald-600 transition-transform" id="status-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <!-- Status Dropdown List -->
+                    <div id="status-dropdown" class="hidden absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-slate-100 py-1.5 z-50 text-sm">
+                        <button onclick="setAgentStatus('Online')" class="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer">
+                            <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                            <span class="font-medium">Online</span>
+                        </button>
+                        <button onclick="setAgentStatus('Busy')" class="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                            <span class="font-medium">Busy</span>
+                        </button>
+                        <button onclick="setAgentStatus('Away')" class="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer">
+                            <span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span>
+                            <span class="font-medium">Away</span>
+                        </button>
+                        <button onclick="setAgentStatus('Offline')" class="w-full flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer">
+                            <span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                            <span class="font-medium">Offline</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Brief Stats Banner -->
+            <div class="grid grid-cols-3 gap-2 bg-white p-2 rounded-xl border border-slate-100 shadow-2xs text-center">
+                <div>
+                    <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Live CS</p>
+                    <p id="stat-live-count" class="text-sm font-bold text-emerald-600">3</p>
+                </div>
+                <div class="border-x border-slate-100">
+                    <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">In Bot</p>
+                    <p id="stat-bot-count" class="text-sm font-bold text-indigo-600">2</p>
+                </div>
+                <div>
+                    <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Unread</p>
+                    <p id="stat-unread-count" class="text-sm font-bold text-rose-500">3</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Bar and Quick Tabs -->
+        <div class="p-3 border-b border-slate-100 flex flex-col gap-2.5 bg-white">
+            <!-- Search Input Container -->
+            <div class="relative">
+                <input type="text" id="chat-search" oninput="handleSearch()" placeholder="Search customer, phone, or message..." class="w-full pl-9.5 pr-8 py-2 bg-slate-100 hover:bg-slate-200/50 focus:bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none">
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <button id="search-clear-btn" onclick="clearSearch()" class="hidden absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <!-- Tab Filters (WhatsApp Web / Tokopedia CS panel filters) -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 select-none">
+                <button onclick="setActiveTab('all')" id="tab-all" class="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-900 text-white shadow-xs transition-colors shrink-0 cursor-pointer">
+                    All Chats
+                </button>
+                <button onclick="setActiveTab('live')" id="tab-live" class="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200/60 text-slate-600 transition-colors shrink-0 cursor-pointer">
+                    Live CS
+                </button>
+                <button onclick="setActiveTab('bot')" id="tab-bot" class="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200/60 text-slate-600 transition-colors shrink-0 cursor-pointer">
+                    Bot
+                </button>
+                <button onclick="setActiveTab('unread')" id="tab-unread" class="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200/60 text-slate-600 transition-colors shrink-0 cursor-pointer">
+                    Unread
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat List (Scrollable) -->
+        <div id="chat-list" class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white">
+            <!-- Dynamically populated -->
+        </div>
+
+        <!-- Sidebar footer info -->
+        <div class="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+            <span>Server Status: <strong class="text-emerald-500">Connected</strong></span>
+            <span>v2.4.1</span>
+        </div>
+    </aside>
+
+    <!-- Main Chat Window Area -->
+    <main id="chat-window-container" class="flex-1 flex flex-col h-full bg-[#f8fafc] relative">
+        
+        <!-- Welcome Screen (Shown when no chat is selected) -->
+        <div id="welcome-screen" class="absolute inset-0 flex flex-col items-center justify-center p-8 bg-slate-50 z-10">
+            <div class="max-w-md text-center flex flex-col items-center gap-6">
+                <!-- SVG Support Agent Illustration -->
+                <div class="w-32 h-32 rounded-3xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+                    <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800 mb-2">Omnichannel CS Console</h2>
+                    <p class="text-sm text-slate-500 leading-relaxed">
+                        Select a customer conversation from the sidebar list to start replying. You can manage automated bot handovers, send canned responses, and monitor customer queries in real-time.
+                    </p>
+                </div>
+                <div class="w-full grid grid-cols-2 gap-3 text-left">
+                    <div class="p-3 bg-white border border-slate-200 rounded-xl flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-800">Secure Live Connection</p>
+                            <p class="text-[10px] text-slate-400">All data encrypted</p>
+                        </div>
+                    </div>
+                    <div class="p-3 bg-white border border-slate-200 rounded-xl flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-800">Canned Templates</p>
+                            <p class="text-[10px] text-slate-400">Double click quick send</p>
+                        </div>
+                    </div>
+                </div>
+                <span class="text-xs text-slate-400 mt-2 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 11.388c-.902-.121-1.366-1.185-.777-1.896l3.52-4.248a1 1 0 011.536.087l2.81 3.515 4.887-5.96a1 1 0 011.574.104l4.38 5.768c.53.697-.03 1.708-.915 1.637l-4.786-.384a1 1 0 01-.84-.57l-1.632-3.153-2.222 2.71a1 1 0 01-1.503.045L5.79 8.243l-3.624 3.145z" clip-rule="evenodd"></path></svg>
+                    Average agent response rate is in optimal zone (98.4%)
+                </span>
+            </div>
+        </div>
+
+        <!-- Chat Header -->
+        <div id="chat-header" class="h-16 border-b border-slate-200 bg-white px-4 flex items-center justify-between shrink-0 shadow-2xs z-10">
+            <div class="flex items-center gap-3">
+                <!-- Mobile Back Button -->
+                <button onclick="closeMobileChat()" class="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer transition-colors" title="Back to Chat List">
+                    <svg class="w-5.5 h-5.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+
+                <!-- Customer Info -->
+                <div class="relative">
+                    <div id="header-avatar" class="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-400 to-slate-600 flex items-center justify-center text-white font-bold text-sm shadow-xs">
+                        CU
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h2 id="header-customer-name" class="font-bold text-slate-800 text-sm md:text-base leading-tight">Customer Name</h2>
+                        <span id="header-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold">Bot</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-0.5 text-xs text-slate-400">
+                        <span id="header-customer-phone" class="font-mono">+62 800-000-0000</span>
+                        <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+                        <span id="header-typing-indicator" class="text-slate-400 transition-all duration-300">Active Session</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions Right -->
+            <div class="flex items-center gap-2">
+                <!-- Close Chat / Handover to Bot Button -->
+                <button id="handover-btn" onclick="toggleHandover()" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer hover:shadow-xs active:scale-97 transition-all">
+                    <!-- Text and icon will be set dynamically -->
+                    <span id="handover-btn-icon"></span>
+                    <span id="handover-btn-text">Handover</span>
+                </button>
+
+                <!-- Menu Options -->
+                <div class="relative">
+                    <button class="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer" title="More Actions">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message History Window -->
+        <div id="messages-container" class="flex-1 overflow-y-auto px-4 py-6 bg-[#f1f5f9] flex flex-col gap-3.5 relative">
+            <!-- Subtle WhatsApp Chat Wallpaper Pattern Overlay (Pure CSS SVG) -->
+            <div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath fill-rule='evenodd' d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zM11 6c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm7 34c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm51 30c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zM41 20c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm7 54c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zM11 68c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zM61 6c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM21 21c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm20 53c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM61 41c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm-40 20c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm30-20c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm0 20c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM30 30c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm0-1c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm30 30c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm0-1c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7z'/%3E%3C/g%3E%3C/svg%3E&quot;);"></div>
+            
+            <!-- Dynamic Messages will load here -->
+        </div>
+
+        <!-- Quick Canned Replies Bar (Tokopedia style) -->
+        <div id="quick-replies-bar" class="bg-white border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto select-none shrink-0 scrollbar-none">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                Templates:
+            </span>
+            <!-- Dynamic canned responses loaded via JS -->
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div id="input-bar" class="p-3 bg-white border-t border-slate-200 flex flex-col shrink-0">
+            <div class="flex items-center gap-3">
+                <!-- Attachments Button -->
+                <button class="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer relative group" title="Attach file">
+                    <svg class="w-5.5 h-5.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                </button>
+
+                <!-- Emoji Button -->
+                <button class="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer" title="Insert Emoji">
+                    <svg class="w-5.5 h-5.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </button>
+
+                <!-- Textarea Message Input -->
+                <form id="message-form" onsubmit="sendMessage(event)" class="flex-1 flex gap-2.5 items-center">
+                    <input type="text" id="message-input" onkeyup="checkInputContent()" placeholder="Type a message..." autocomplete="off" class="flex-1 px-4 py-2.5 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all">
+                    
+                    <!-- Send Button -->
+                    <button type="submit" id="send-btn" class="p-2.5 rounded-xl bg-slate-200 text-slate-400 cursor-not-allowed transition-all shrink-0" disabled>
+                        <svg class="w-5.5 h-5.5 transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <!-- Notification Toast Element -->
+    <div id="toast" class="fixed bottom-6 right-6 px-4 py-3 bg-slate-900 text-white rounded-xl shadow-lg flex items-center gap-2.5 text-sm transform translate-y-24 opacity-0 transition-all duration-300 z-50">
+        <span id="toast-icon" class="text-emerald-400">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+        </span>
+        <span id="toast-message">Notification message here</span>
+    </div>
+
+    <!-- Script logic -->
+    <script>
+        // Canned responses definitions (Tokopedia-style quick replies)
+        const quickReplies = [
+            { label: "👋 Greeting", text: "Halo! Selamat datang di Toko Kami. Ada yang bisa saya bantu hari ini?" },
+            { label: "📦 Ask Invoice", text: "Boleh tolong infokan nomor invoice pesanan Kakak agar kami bantu cek statusnya di sistem?" },
+            { label: "⏳ Processing", text: "Baik Kak, pesanan Anda sedang kami proses dan segera diserahkan ku kurir pengiriman hari ini." },
+            { label: "✅ Solved", text: "Sama-sama Kak. Senang bisa membantu! Jika ada pertanyaan lain, jangan ragu untuk menghubungi kami kembali." },
+            { label: "⭐ Rate Us", text: "Terima kasih atas masukannya! Jangan lupa untuk memberikan rating bintang 5 untuk pelayanan kami ya Kak. Have a nice day!" }
+        ];
+
+        // Core Chat Database (Simulating server state)
+        let chats = [
+            {
+                id: 1,
+                name: "Aditya Pratama",
+                phone: "+62 812-3456-7890",
+                status: "Live CS", // "Live CS" or "Bot"
+                avatar: "AP",
+                avatarBg: "bg-gradient-to-tr from-emerald-400 to-teal-600",
+                unread: 2,
+                messages: [
+                    { sender: "customer", text: "Halo, selamat pagi.", time: "09:30 AM", type: "text" },
+                    { sender: "bot", text: "Halo! Saya adalah Bot Asisten Toko. Ada yang bisa saya bantu hari ini?", time: "09:30 AM", type: "text" },
+                    { sender: "customer", text: "Saya mau tanya status pengiriman pesanan #INV-992384. Barangnya belum sampai sejak kemarin.", time: "09:31 AM", type: "text" },
+                    { sender: "bot", text: "Mohon tunggu sebentar, saya sedang memeriksa database pesanan Anda...", time: "09:31 AM", type: "text" },
+                    { sender: "bot", text: "Pesanan #INV-992384 saat ini sedang dalam perjalanan oleh kurir JNE. Untuk bantuan lebih lanjut, saya akan menghubungkan Anda ke Live CS.", time: "09:32 AM", type: "text" },
+                    { sender: "system", text: "Bot mengalihkan percakapan ke Live CS (Sarah)", time: "09:32 AM", type: "system" },
+                    { sender: "agent", text: "Selamat pagi Kak Aditya. Saya Sarah yang akan membantu Kakak hari ini. Baik, saya bantu cek ya kak...", time: "09:33 AM", type: "text" },
+                    { sender: "agent", text: "Dari data kami, pesanan Kak Aditya diperkirakan sampai hari ini sebelum jam 17.00. Apakah ada hal lain yang bisa saya bantu?", time: "09:35 AM", type: "text" },
+                    { sender: "customer", text: "Baik mbak, ditunggu ya. Oh iya, apakah kurirnya akan menelepon?", time: "10:41 AM", type: "text" },
+                    { sender: "customer", text: "Dan bisa tolong minta nomor telepon kurirnya jika ada?", time: "10:42 AM", type: "text" }
+                ]
+            },
+            {
+                id: 2,
+                name: "Dewi Lestari",
+                phone: "+62 878-1122-3344",
+                status: "Bot",
+                avatar: "DL",
+                avatarBg: "bg-gradient-to-tr from-purple-400 to-indigo-600",
+                unread: 0,
+                messages: [
+                    { sender: "customer", text: "Halo, apakah toko buka hari Minggu?", time: "Yesterday 02:15 PM", type: "text" },
+                    { sender: "bot", text: "Halo! Toko kami buka setiap hari Senin - Sabtu pukul 08.00 - 20.00. Pada hari Minggu kami libur dan tidak ada pengiriman.", time: "Yesterday 02:15 PM", type: "text" },
+                    { sender: "customer", text: "Terima kasih infonya.", time: "Yesterday 02:16 PM", type: "text" }
+                ]
+            },
+            {
+                id: 3,
+                name: "Budi Santoso",
+                phone: "+62 821-9988-7766",
+                status: "Live CS",
+                avatar: "BS",
+                avatarBg: "bg-gradient-to-tr from-blue-400 to-blue-600",
+                unread: 0,
+                messages: [
+                    { sender: "customer", text: "Halo kak, apakah barang Ready Stock?", time: "08:00 AM", type: "text" },
+                    { sender: "agent", text: "Halo Kak Budi! Produk tersebut ready stock melimpah ya kak. Silakan langsung diorder!", time: "08:05 AM", type: "text" },
+                    { sender: "customer", text: "Oke saya order 2 pcs ya. Pakai GoSend Instant biar cepat.", time: "08:10 AM", type: "text" },
+                    { sender: "customer", text: "Sudah saya transfer ya kak, mohon segera diproses dan dikirim.", time: "08:15 AM", type: "text" }
+                ]
+            },
+            {
+                id: 4,
+                name: "+62 899-7654-3210",
+                phone: "+62 899-7654-3210",
+                status: "Bot",
+                avatar: "?",
+                avatarBg: "bg-gradient-to-tr from-slate-400 to-slate-500",
+                unread: 1,
+                messages: [
+                    { sender: "customer", text: "Minta daftar harga grosir dong gan.", time: "Mon 11:20 AM", type: "text" }
+                ]
+            },
+            {
+                id: 5,
+                name: "Clara Anastasia",
+                phone: "+62 853-4455-6677",
+                status: "Live CS",
+                avatar: "CA",
+                avatarBg: "bg-gradient-to-tr from-rose-400 to-rose-600",
+                unread: 0,
+                messages: [
+                    { sender: "customer", text: "Mbak, pesanan saya #INV-7762 sudah sampai. Barangnya bagus sekali!", time: "2 days ago", type: "text" },
+                    { sender: "agent", text: "Wah, senang sekali mendengarnya Kak Clara! Terima kasih atas feedback positif dan kepercayaannya.", time: "2 days ago", type: "text" },
+                    { sender: "customer", text: "Sama-sama kak, terima kasih kembali!", time: "2 days ago", type: "text" }
+                ]
+            }
+        ];
+
+        // Active Application State
+        let activeChatId = null;
+        let activeFilterTab = "all"; // 'all', 'live', 'bot', 'unread'
+        let searchQuery = "";
+        let agentStatus = "Online";
+
+        // DOM elements
+        const chatListEl = document.getElementById("chat-list");
+        const welcomeScreenEl = document.getElementById("welcome-screen");
+        const messagesContainerEl = document.getElementById("messages-container");
+        const headerCustomerNameEl = document.getElementById("header-customer-name");
+        const headerCustomerPhoneEl = document.getElementById("header-customer-phone");
+        const headerStatusBadgeEl = document.getElementById("header-status-badge");
+        const headerAvatarEl = document.getElementById("header-avatar");
+        const handoverBtnEl = document.getElementById("handover-btn");
+        const handoverBtnTextEl = document.getElementById("handover-btn-text");
+        const handoverBtnIconEl = document.getElementById("handover-btn-icon");
+        const messageInputEl = document.getElementById("message-input");
+        const sendBtnEl = document.getElementById("send-btn");
+        const searchInputEl = document.getElementById("chat-search");
+        const searchClearBtnEl = document.getElementById("search-clear-btn");
+        const typingIndicatorEl = document.getElementById("header-typing-indicator");
+        const quickRepliesBarEl = document.getElementById("quick-replies-bar");
+        const sidebarContainerEl = document.getElementById("sidebar-container");
+        const chatWindowContainerEl = document.getElementById("chat-window-container");
+
+        // Initialize App on load
+        window.addEventListener("DOMContentLoaded", () => {
+            renderChatList();
+            renderQuickReplies();
+            updateDashboardStats();
+        });
+
+        // Set status dropdown open/close toggler
+        function toggleStatusDropdown() {
+            const dropdown = document.getElementById("status-dropdown");
+            const arrow = document.getElementById("status-arrow");
+            const isOpen = !dropdown.classList.contains("hidden");
+            
+            if (isOpen) {
+                dropdown.classList.add("hidden");
+                arrow.style.transform = "rotate(0deg)";
+            } else {
+                dropdown.classList.remove("hidden");
+                arrow.style.transform = "rotate(180deg)";
+            }
+        }
+
+        // Close dropdown when clicking outside
+        window.addEventListener("click", (e) => {
+            const dropdown = document.getElementById("status-dropdown");
+            const menuBtn = document.getElementById("status-menu-btn");
+            if (dropdown && menuBtn && !menuBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add("hidden");
+                document.getElementById("status-arrow").style.transform = "rotate(0deg)";
+            }
+        });
+
+        // Set agent availability status
+        function setAgentStatus(status) {
+            agentStatus = status;
+            const statusText = document.getElementById("agent-status-text");
+            const statusDot = document.getElementById("agent-status-dot");
+            const menuBtn = document.getElementById("status-menu-btn");
+            
+            statusText.innerText = status;
+            
+            // Remove color classes
+            statusDot.className = "absolute bottom-0 right-0 w-3.5 h-3.5 border-2 border-white rounded-full";
+            menuBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer hover:shadow-xs active:scale-97";
+            
+            if (status === "Online") {
+                statusDot.classList.add("bg-green-500");
+                menuBtn.classList.add("bg-emerald-50", "text-emerald-700", "border-emerald-100/50", "hover:bg-emerald-100");
+            } else if (status === "Busy") {
+                statusDot.classList.add("bg-amber-500");
+                menuBtn.classList.add("bg-amber-50", "text-amber-700", "border-amber-100/50", "hover:bg-amber-100");
+            } else if (status === "Away") {
+                statusDot.classList.add("bg-orange-400");
+                menuBtn.classList.add("bg-orange-50", "text-orange-700", "border-orange-100/50", "hover:bg-orange-100");
+            } else {
+                statusDot.classList.add("bg-slate-400");
+                menuBtn.classList.add("bg-slate-100", "text-slate-600", "border-slate-200/50", "hover:bg-slate-200/60");
+            }
+            
+            toggleStatusDropdown();
+            showToast(`Status changed to ${status}`, "info");
+        }
+
+        // Render Quick Canned Replies
+        function renderQuickReplies() {
+            quickRepliesBarEl.innerHTML = `
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                    Quick Replies:
+                </span>
+            `;
+            quickReplies.forEach(qr => {
+                const btn = document.createElement("button");
+                btn.className = "px-3 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-slate-200/60 text-slate-600 rounded-full text-xs font-medium transition-all shrink-0 cursor-pointer select-none active:scale-95";
+                btn.innerText = qr.label;
+                btn.title = qr.text;
+                btn.onclick = () => selectQuickReply(qr.text);
+                quickRepliesBarEl.appendChild(btn);
+            });
+        }
+
+        // Action when a quick reply is clicked
+        function selectQuickReply(text) {
+            messageInputEl.value = text;
+            messageInputEl.focus();
+            checkInputContent();
+        }
+
+        // Render Chat List sidebar items
+        function renderChatList() {
+            chatListEl.innerHTML = "";
+            
+            // Filter chats by tab and query
+            const filteredChats = chats.filter(chat => {
+                // Tab filter
+                if (activeFilterTab === "live" && chat.status !== "Live CS") return false;
+                if (activeFilterTab === "bot" && chat.status !== "Bot") return false;
+                if (activeFilterTab === "unread" && chat.unread === 0) return false;
+                
+                // Search filter
+                if (searchQuery.trim() !== "") {
+                    const query = searchQuery.toLowerCase();
+                    const nameMatch = chat.name.toLowerCase().includes(query);
+                    const phoneMatch = chat.phone.includes(query);
+                    const msgMatch = chat.messages.some(m => m.text.toLowerCase().includes(query));
+                    return nameMatch || phoneMatch || msgMatch;
+                }
+                
+                return true;
+            });
+
+            if (filteredChats.length === 0) {
+                chatListEl.innerHTML = `
+                    <div class="p-8 text-center text-slate-400 text-sm">
+                        <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                        No active conversations found
+                    </div>
+                `;
+                return;
+            }
+
+            filteredChats.forEach(chat => {
+                const lastMsg = chat.messages[chat.messages.length - 1];
+                const lastMsgText = lastMsg ? lastMsg.text : "";
+                const lastMsgTime = lastMsg ? lastMsg.time : "";
+                
+                const isSelected = chat.id === activeChatId;
+                
+                const item = document.createElement("button");
+                item.className = `w-full text-left p-3.5 flex gap-3 transition-all relative border-l-3 cursor-pointer ${
+                    isSelected 
+                        ? "bg-emerald-50/70 border-emerald-500" 
+                        : "hover:bg-slate-50 border-transparent hover:border-slate-200"
+                }`;
+                item.onclick = () => selectChat(chat.id);
+                
+                // Status Badge rendering
+                let badgeClass = "";
+                if (chat.status === "Live CS") {
+                    badgeClass = "bg-emerald-100 text-emerald-800 border border-emerald-200/50";
+                } else {
+                    badgeClass = "bg-indigo-50 text-indigo-700 border border-indigo-100/50";
+                }
+                
+                item.innerHTML = `
+                    <div class="relative shrink-0">
+                        <div class="w-12 h-12 rounded-full ${chat.avatarBg} flex items-center justify-center text-white font-bold text-base shadow-xs">
+                            ${chat.avatar}
+                        </div>
+                        ${chat.status === "Live CS" 
+                            ? `<span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>` 
+                            : `<span class="absolute bottom-0 right-0 w-3 h-3 bg-indigo-500 border-2 border-white rounded-full flex items-center justify-center text-[6px] text-white">🤖</span>`}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-baseline mb-1">
+                            <h4 class="font-bold text-slate-800 text-sm truncate pr-2 ${chat.unread > 0 ? "text-slate-900" : ""}">${chat.name}</h4>
+                            <span class="text-[10px] text-slate-400 shrink-0 font-medium">${lastMsgTime}</span>
+                        </div>
+                        <div class="flex justify-between items-center gap-1.5">
+                            <p class="text-xs text-slate-500 truncate flex-1 ${chat.unread > 0 ? "font-semibold text-slate-800" : ""}">${lastMsgText}</p>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <span class="px-1.5 py-0.5 rounded-sm text-[8px] font-bold uppercase tracking-wider ${badgeClass}">${chat.status}</span>
+                                ${chat.unread > 0 
+                                    ? `<span class="w-4.5 h-4.5 bg-rose-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-xs shrink-0 scale-animation">${chat.unread}</span>` 
+                                    : ""}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                chatListEl.appendChild(item);
+            });
+        }
+
+        // Update Dashboard summary statistics
+        function updateDashboardStats() {
+            const liveCount = chats.filter(c => c.status === "Live CS").length;
+            const botCount = chats.filter(c => c.status === "Bot").length;
+            const unreadCount = chats.reduce((sum, c) => sum + c.unread, 0);
+            
+            document.getElementById("stat-live-count").innerText = liveCount;
+            document.getElementById("stat-bot-count").innerText = botCount;
+            document.getElementById("stat-unread-count").innerText = unreadCount;
+        }
+
+        // Set Active Filter Tab
+        function setActiveTab(tab) {
+            activeFilterTab = tab;
+            
+            // Reset tab styles
+            ["all", "live", "bot", "unread"].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if (t === tab) {
+                    btn.className = "px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-900 text-white shadow-xs transition-colors shrink-0 cursor-pointer";
+                } else {
+                    btn.className = "px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200/60 text-slate-600 transition-colors shrink-0 cursor-pointer";
+                }
+            });
+
+            renderChatList();
+        }
+
+        // Select Customer Chat
+        function selectChat(id) {
+            activeChatId = id;
+            const chat = chats.find(c => c.id === id);
+            if (!chat) return;
+
+            // Clear unread count
+            if (chat.unread > 0) {
+                chat.unread = 0;
+                renderChatList();
+                updateDashboardStats();
+            }
+
+            // Populate header details
+            headerCustomerNameEl.innerText = chat.name;
+            headerCustomerPhoneEl.innerText = chat.phone;
+            headerAvatarEl.innerText = chat.avatar;
+            headerAvatarEl.className = `w-10 h-10 rounded-full ${chat.avatarBg} flex items-center justify-center text-white font-bold text-sm shadow-xs`;
+            
+            // Set header badge styling
+            updateHeaderBadge(chat.status);
+            
+            // Set Handover button state
+            updateHandoverButton(chat.status);
+
+            // Populate Message Logs
+            renderMessages();
+
+            // Clear Typing Indicator
+            typingIndicatorEl.innerText = "Active Session";
+            typingIndicatorEl.classList.remove("text-emerald-500", "font-medium");
+
+            // Hide Welcome Screen, Show Chat Window
+            welcomeScreenEl.classList.add("hidden");
+
+            // Handle Responsive switch (on Mobile, show Chat Window, hide Sidebar)
+            if (window.innerWidth < 768) {
+                sidebarContainerEl.classList.add("hidden");
+                chatWindowContainerEl.classList.remove("hidden");
+                chatWindowContainerEl.classList.add("flex");
+            }
+
+            // Focus Input
+            messageInputEl.focus();
+            
+            // Reset input send button state
+            checkInputContent();
+        }
+
+        // Close Chat Window on Mobile (back to list)
+        function closeMobileChat() {
+            sidebarContainerEl.classList.remove("hidden");
+            sidebarContainerEl.classList.add("flex");
+            chatWindowContainerEl.classList.add("hidden");
+            chatWindowContainerEl.classList.remove("flex");
+        }
+
+        // Update active badge in Chat Header
+        function updateHeaderBadge(status) {
+            headerStatusBadgeEl.innerText = status;
+            if (status === "Live CS") {
+                headerStatusBadgeEl.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200/50";
+            } else {
+                headerStatusBadgeEl.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100/50";
+            }
+        }
+
+        // Update UI state of Handover Button
+        function updateHandoverButton(status) {
+            if (status === "Live CS") {
+                handoverBtnEl.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer transition-all active:scale-97";
+                handoverBtnTextEl.innerText = "Handover to Bot";
+                handoverBtnIconEl.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                `;
+            } else {
+                handoverBtnEl.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer transition-all active:scale-97";
+                handoverBtnTextEl.innerText = "Claim Chat (Live CS)";
+                handoverBtnIconEl.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                `;
+            }
+        }
+
+        // Toggle Handover Workflow (Bot <-> Live CS)
+        function toggleHandover() {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            if (chat.status === "Live CS") {
+                // Transfer to Bot
+                chat.status = "Bot";
+                chat.messages.push({
+                    sender: "system",
+                    text: `Percakapan dialihkan ke Bot Asisten oleh ${agentStatus === "Online" ? "Sarah Jenkins" : "Agen"}`,
+                    time: timeStr,
+                    type: "system"
+                });
+                showToast("Chat handed over to Bot successfully", "info");
+            } else {
+                // Claim Chat
+                chat.status = "Live CS";
+                chat.messages.push({
+                    sender: "system",
+                    text: `Percakapan diambil alih oleh Live CS (Sarah Jenkins)`,
+                    time: timeStr,
+                    type: "system"
+                });
+                showToast("You have claimed this chat session", "success");
+            }
+
+            // Update UI elements
+            updateHeaderBadge(chat.status);
+            updateHandoverButton(chat.status);
+            renderMessages();
+            renderChatList();
+            updateDashboardStats();
+        }
+
+        // Render Message Bubbles
+        function renderMessages() {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            messagesContainerEl.innerHTML = `
+                <div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath fill-rule='evenodd' d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zM11 6c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm7 34c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm51 30c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zM41 20c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm7 54c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zM11 68c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zM61 6c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM21 21c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm20 53c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM61 41c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm-40 20c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm30-20c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm0 20c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM30 30c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm0-1c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm30 30c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm0-1c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7z'/%3E%3C/g%3E%3C/svg%3E&quot;);"></div>
+            `;
+
+            // Group messages or just render sequentially with custom styling
+            chat.messages.forEach(msg => {
+                const wrapper = document.createElement("div");
+                
+                if (msg.sender === "system") {
+                    wrapper.className = "flex justify-center my-1.5 select-none";
+                    wrapper.innerHTML = `
+                        <div class="px-3.5 py-1.5 rounded-full text-[11px] font-semibold text-slate-500 bg-slate-200/60 border border-slate-300/40 shadow-2xs max-w-[85%] text-center leading-normal">
+                            ${msg.text} &nbsp;•&nbsp; <span class="font-normal text-slate-400">${msg.time}</span>
+                        </div>
+                    `;
+                } else if (msg.sender === "customer") {
+                    wrapper.className = "flex justify-start my-1";
+                    wrapper.innerHTML = `
+                        <div class="relative max-w-[75%] md:max-w-[70%] bg-white text-slate-800 px-4 py-3 rounded-2xl rounded-tl-none shadow-xs border border-slate-100">
+                            <!-- Arrow element -->
+                            <div class="absolute top-0 -left-1.5 w-2 h-3 bg-white" style="clip-path: polygon(100% 0, 0 0, 100% 100%);"></div>
+                            <p class="text-sm font-medium leading-relaxed break-words">${msg.text}</p>
+                            <div class="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-400 select-none">
+                                <span>${msg.time}</span>
+                            </div>
+                        </div>
+                    `;
+                } else if (msg.sender === "agent") {
+                    wrapper.className = "flex justify-end my-1";
+                    wrapper.innerHTML = `
+                        <div class="relative max-w-[75%] md:max-w-[70%] bg-emerald-600 text-white px-4 py-3 rounded-2xl rounded-tr-none shadow-xs">
+                            <!-- Arrow element -->
+                            <div class="absolute top-0 -right-1.5 w-2 h-3 bg-emerald-600" style="clip-path: polygon(0 0, 100% 0, 0 100%);"></div>
+                            <p class="text-sm font-medium leading-relaxed break-words">${msg.text}</p>
+                            <div class="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-emerald-100 select-none">
+                                <span>${msg.time}</span>
+                                <svg class="w-3.5 h-3.5 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                        </div>
+                    `;
+                } else if (msg.sender === "bot") {
+                    // Chatbot message format
+                    wrapper.className = "flex justify-start my-1";
+                    wrapper.innerHTML = `
+                        <div class="relative max-w-[75%] md:max-w-[70%] bg-indigo-50/70 border border-indigo-100 text-slate-800 px-4 py-3 rounded-2xl rounded-tl-none shadow-2xs">
+                            <!-- Arrow element -->
+                            <div class="absolute top-0 -left-1.5 w-2 h-3 bg-indigo-50/70 border-l border-t border-indigo-100" style="clip-path: polygon(100% 0, 0 0, 100% 100%);"></div>
+                            <div class="flex items-center gap-1 mb-1 text-[10px] font-bold text-indigo-700 tracking-wide uppercase select-none">
+                                <span>🤖 Bot Assistant</span>
+                            </div>
+                            <p class="text-sm font-medium leading-relaxed text-indigo-950 break-words">${msg.text}</p>
+                            <div class="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-400 select-none">
+                                <span>${msg.time}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                messagesContainerEl.appendChild(wrapper);
+            });
+
+            // Scroll to the bottom of the container
+            setTimeout(() => {
+                messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
+            }, 50);
+        }
+
+        // Handle typing input and toggle button coloring / state
+        function checkInputContent() {
+            const hasText = messageInputEl.value.trim() !== "";
+            sendBtnEl.disabled = !hasText;
+            
+            if (hasText) {
+                sendBtnEl.classList.remove("bg-slate-200", "text-slate-400", "cursor-not-allowed");
+                sendBtnEl.classList.add("bg-emerald-600", "text-white", "hover:bg-emerald-700", "cursor-pointer", "active:scale-95");
+            } else {
+                sendBtnEl.classList.remove("bg-emerald-600", "text-white", "hover:bg-emerald-700", "cursor-pointer", "active:scale-95");
+                sendBtnEl.classList.add("bg-slate-200", "text-slate-400", "cursor-not-allowed");
+            }
+        }
+
+        // Send Message action
+        function sendMessage(e) {
+            e.preventDefault();
+            const text = messageInputEl.value.trim();
+            if (text === "") return;
+
+            const chat = chats.find(c => c.id === activeChatId);
+            if (!chat) return;
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            // Push agent response (if CS mode) or simulated agent response
+            const senderType = chat.status === "Live CS" ? "agent" : "customer";
+            
+            chat.messages.push({
+                sender: senderType,
+                text: text,
+                time: timeStr,
+                type: "text"
+            });
+
+            // Clear inputs
+            messageInputEl.value = "";
+            checkInputContent();
+
+            // Re-render
+            renderMessages();
+            renderChatList();
+            updateDashboardStats();
+
+            // Simulate responses based on workflow mode
+            if (chat.status === "Bot") {
+                // If it is in Bot mode, the chatbot automatically responds after 1.2s
+                simulateBotResponse(chat, text);
+            } else {
+                // If in Live CS mode, simulate customer replying to Agent after 3s
+                simulateCustomerResponse(chat);
+            }
+        }
+
+        // Simulate chatbot replying
+        function simulateBotResponse(chat, userMsg) {
+            // Set typing indicator
+            setTimeout(() => {
+                if (activeChatId === chat.id) {
+                    typingIndicatorEl.innerText = "Bot is typing...";
+                    typingIndicatorEl.classList.add("text-indigo-600", "font-medium");
+                }
+            }, 400);
+
+            setTimeout(() => {
+                let replyText = "Mohon maaf, Bot Asisten tidak mengerti pesan Anda. Silakan klik tombol 'Claim Chat (Live CS)' untuk berbicara langsung dengan Agent.";
+                const msgLower = userMsg.toLowerCase();
+
+                if (msgLower.includes("invoice") || msgLower.includes("pesanan") || msgLower.includes("#inv")) {
+                    replyText = "Baik, saya temukan pesanan aktif Anda. Paket Anda saat ini sedang dikemas di gudang utama kami dan akan siap diserahkan ke jasa kirim hari ini.";
+                } else if (msgLower.includes("halo") || msgLower.includes("selamat pagi") || msgLower.includes("siang") || msgLower.includes("sore")) {
+                    replyText = "Halo! Terima kasih telah menghubungi kami. Ada yang bisa Bot Asisten bantu terkait produk atau pengiriman Anda?";
+                } else if (msgLower.includes("harga") || msgLower.includes("grosir") || msgLower.includes("diskon")) {
+                    replyText = "Untuk harga grosir minimum pembelian adalah 12 pcs dengan diskon langsung 15%. Silakan masukkan produk ke keranjang belanja untuk simulasi.";
+                } else if (msgLower.includes("terima kasih") || msgLower.includes("makasih") || msgLower.includes("oke")) {
+                    replyText = "Sama-sama! Senang bisa melayani Anda. Ketik pesan Anda lagi jika masih ada kendala.";
+                }
+
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                chat.messages.push({
+                    sender: "bot",
+                    text: replyText,
+                    time: timeStr,
+                    type: "text"
+                });
+
+                if (activeChatId === chat.id) {
+                    typingIndicatorEl.innerText = "Active Session";
+                    typingIndicatorEl.classList.remove("text-indigo-600", "font-medium");
+                    renderMessages();
+                } else {
+                    // Incremenet unread count if we are not currently viewing this chat
+                    chat.unread += 1;
+                }
+                
+                renderChatList();
+                updateDashboardStats();
+            }, 1500);
+        }
+
+        // Simulate Customer replying to Agent (Live CS workflow)
+        function simulateCustomerResponse(chat) {
+            // Wait 1.5 seconds, then show customer is typing...
+            setTimeout(() => {
+                if (activeChatId === chat.id) {
+                    typingIndicatorEl.innerText = "Customer is typing...";
+                    typingIndicatorEl.classList.add("text-emerald-500", "font-semibold");
+                }
+            }, 1800);
+
+            // Wait 3.5 seconds total, then deliver message
+            setTimeout(() => {
+                const customerReplies = [
+                    "Baik Kak, terima kasih banyak atas penjelasannya! Saya tunggu pesanannya.",
+                    "Oke saya mengerti. Langsung saya check out sekarang ya kak.",
+                    "Sip kak! Terima kasih atas pelayanannya yang cepat dan ramah.",
+                    "Apakah ada diskon tambahan kalau saya beli 3 pcs lagi kak?",
+                    "Baik kak, nanti kurirnya saya hubungi jika belum sampai sore ini."
+                ];
+                
+                // Pick a random customer response
+                const randomReply = customerReplies[Math.floor(Math.random() * customerReplies.length)];
+
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                chat.messages.push({
+                    sender: "customer",
+                    text: randomReply,
+                    time: timeStr,
+                    type: "text"
+                });
+
+                if (activeChatId === chat.id) {
+                    typingIndicatorEl.innerText = "Active Session";
+                    typingIndicatorEl.classList.remove("text-emerald-500", "font-semibold");
+                    renderMessages();
+                } else {
+                    // Increment unread count if we are not currently viewing this chat
+                    chat.unread += 1;
+                }
+
+                renderChatList();
+                updateDashboardStats();
+                showNotificationSound(); // Optional audio hint mock
+            }, 3800);
+        }
+
+        // Mock sound notification
+        function showNotificationSound() {
+            // Visual pulse or toast hint instead of audio to prevent system lockouts
+            showToast("New message received from customer", "info");
+        }
+
+        // Handle Sidebar Search Input
+        function handleSearch() {
+            searchQuery = searchInputEl.value;
+            
+            if (searchQuery.trim() !== "") {
+                searchClearBtnEl.classList.remove("hidden");
+            } else {
+                searchClearBtnEl.classList.add("hidden");
+            }
+            
+            renderChatList();
+        }
+
+        // Clear Sidebar Search Query
+        function clearSearch() {
+            searchInputEl.value = "";
+            searchQuery = "";
+            searchClearBtnEl.classList.add("hidden");
+            renderChatList();
+        }
+
+        // Toast Notification System
+        function showToast(message, type = "success") {
+            const toast = document.getElementById("toast");
+            const toastMessage = document.getElementById("toast-message");
+            const toastIcon = document.getElementById("toast-icon");
+            
+            toastMessage.innerText = message;
+            
+            // Set icon and colors based on type
+            if (type === "success") {
+                toastIcon.innerHTML = `
+                    <svg class="w-5 h-5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                `;
+            } else if (type === "info") {
+                toastIcon.innerHTML = `
+                    <svg class="w-5 h-5 text-indigo-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                `;
+            }
+
+            // Animate In
+            toast.className = "fixed bottom-6 right-6 px-4 py-3 bg-slate-900 text-white rounded-xl shadow-lg flex items-center gap-2.5 text-sm transform translate-y-0 opacity-100 transition-all duration-300 z-50";
+            
+            // Animate Out after 3 seconds
+            setTimeout(() => {
+                toast.className = "fixed bottom-6 right-6 px-4 py-3 bg-slate-900 text-white rounded-xl shadow-lg flex items-center gap-2.5 text-sm transform translate-y-24 opacity-0 transition-all duration-300 z-50";
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
