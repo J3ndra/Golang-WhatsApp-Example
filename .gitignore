@@ -1,0 +1,30 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+main
+/server
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# System / Cache
+.DS_Store
+.gemini/
