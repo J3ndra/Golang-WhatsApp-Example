@@ -110,8 +110,8 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// ── Wrap with request-logging middleware ─────────────────────────────────
-	handler := loggingMiddleware(mux)
+	// ── Wrap with request-logging and basic-auth middleware ──────────────────
+	handler := loggingMiddleware(basicAuthMiddleware(mux))
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -148,6 +148,37 @@ func main() {
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
+
+// basicAuthMiddleware checks for static username and password on specific routes.
+func basicAuthMiddleware(next http.Handler) http.Handler {
+	username := os.Getenv("AUTH_USER")
+	if username == "" {
+		username = "bangndru"
+	}
+	password := os.Getenv("AUTH_PASS")
+	if password == "" {
+		password = "P4hPoh!123#"
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Do not protect webhook and health endpoints.
+		// Webhook needs to be open to receive events from Meta/WhatsApp API.
+		// Health checks should be accessible by container runners / load balancers.
+		if r.URL.Path == "/webhook" || r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		u, p, ok := r.BasicAuth()
+		if !ok || u != username || p != password {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 
 // loggingMiddleware logs each HTTP request with method, path, status, and duration.
 func loggingMiddleware(next http.Handler) http.Handler {
