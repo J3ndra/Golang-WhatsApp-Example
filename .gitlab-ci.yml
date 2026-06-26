@@ -64,6 +64,10 @@ deploy:
       $(cat docker-compose.yml)
       EOF
 
+        # Export variables for compose to pick up
+        export CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
+        export PORT=${PORT:-8080}
+
         # Run container using compose (handles podman-compose or docker-compose)
         if command -v podman-compose &> /dev/null; then
           podman-compose down && podman-compose up -d
