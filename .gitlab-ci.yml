@@ -51,7 +51,7 @@ deploy:
         # Write/Update the .env file with secrets from GitLab variables
         cat << EOF > .env
         CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
-        HOST_PORT=${PORT:-8080}
+        HOST_PORT=${HOST_PORT:-8080}
         WHATSAPP_VERIFY_TOKEN=$WHATSAPP_VERIFY_TOKEN
         WHATSAPP_PHONE_NUMBER_ID=$WHATSAPP_PHONE_NUMBER_ID
         WHATSAPP_ACCESS_TOKEN=$WHATSAPP_ACCESS_TOKEN
@@ -66,7 +66,7 @@ deploy:
 
         # Export variables for compose to pick up
         export CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE
-        export HOST_PORT=${PORT:-8080}
+        export HOST_PORT=${HOST_PORT:-8080}
 
         # Run container using compose (handles podman-compose or docker-compose)
         if command -v podman-compose &> /dev/null; then
