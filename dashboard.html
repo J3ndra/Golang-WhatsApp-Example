@@ -293,85 +293,161 @@
             { label: "⭐ Rate Us", text: "Terima kasih atas masukannya! Jangan lupa untuk memberikan rating bintang 5 untuk pelayanan kami ya Kak. Have a nice day!" }
         ];
 
-        // Core Chat Database (Simulating server state)
-        let chats = [
-            {
-                id: 1,
-                name: "Aditya Pratama",
-                phone: "+62 812-3456-7890",
-                status: "Live CS", // "Live CS" or "Bot"
-                avatar: "AP",
-                avatarBg: "bg-gradient-to-tr from-emerald-400 to-teal-600",
-                unread: 2,
-                messages: [
-                    { sender: "customer", text: "Halo, selamat pagi.", time: "09:30 AM", type: "text" },
-                    { sender: "bot", text: "Halo! Saya adalah Bot Asisten Toko. Ada yang bisa saya bantu hari ini?", time: "09:30 AM", type: "text" },
-                    { sender: "customer", text: "Saya mau tanya status pengiriman pesanan #INV-992384. Barangnya belum sampai sejak kemarin.", time: "09:31 AM", type: "text" },
-                    { sender: "bot", text: "Mohon tunggu sebentar, saya sedang memeriksa database pesanan Anda...", time: "09:31 AM", type: "text" },
-                    { sender: "bot", text: "Pesanan #INV-992384 saat ini sedang dalam perjalanan oleh kurir JNE. Untuk bantuan lebih lanjut, saya akan menghubungkan Anda ke Live CS.", time: "09:32 AM", type: "text" },
-                    { sender: "system", text: "Bot mengalihkan percakapan ke Live CS (Sarah)", time: "09:32 AM", type: "system" },
-                    { sender: "agent", text: "Selamat pagi Kak Aditya. Saya Sarah yang akan membantu Kakak hari ini. Baik, saya bantu cek ya kak...", time: "09:33 AM", type: "text" },
-                    { sender: "agent", text: "Dari data kami, pesanan Kak Aditya diperkirakan sampai hari ini sebelum jam 17.00. Apakah ada hal lain yang bisa saya bantu?", time: "09:35 AM", type: "text" },
-                    { sender: "customer", text: "Baik mbak, ditunggu ya. Oh iya, apakah kurirnya akan menelepon?", time: "10:41 AM", type: "text" },
-                    { sender: "customer", text: "Dan bisa tolong minta nomor telepon kurirnya jika ada?", time: "10:42 AM", type: "text" }
-                ]
-            },
-            {
-                id: 2,
-                name: "Dewi Lestari",
-                phone: "+62 878-1122-3344",
-                status: "Bot",
-                avatar: "DL",
-                avatarBg: "bg-gradient-to-tr from-purple-400 to-indigo-600",
-                unread: 0,
-                messages: [
-                    { sender: "customer", text: "Halo, apakah toko buka hari Minggu?", time: "Yesterday 02:15 PM", type: "text" },
-                    { sender: "bot", text: "Halo! Toko kami buka setiap hari Senin - Sabtu pukul 08.00 - 20.00. Pada hari Minggu kami libur dan tidak ada pengiriman.", time: "Yesterday 02:15 PM", type: "text" },
-                    { sender: "customer", text: "Terima kasih infonya.", time: "Yesterday 02:16 PM", type: "text" }
-                ]
-            },
-            {
-                id: 3,
-                name: "Budi Santoso",
-                phone: "+62 821-9988-7766",
-                status: "Live CS",
-                avatar: "BS",
-                avatarBg: "bg-gradient-to-tr from-blue-400 to-blue-600",
-                unread: 0,
-                messages: [
-                    { sender: "customer", text: "Halo kak, apakah barang Ready Stock?", time: "08:00 AM", type: "text" },
-                    { sender: "agent", text: "Halo Kak Budi! Produk tersebut ready stock melimpah ya kak. Silakan langsung diorder!", time: "08:05 AM", type: "text" },
-                    { sender: "customer", text: "Oke saya order 2 pcs ya. Pakai GoSend Instant biar cepat.", time: "08:10 AM", type: "text" },
-                    { sender: "customer", text: "Sudah saya transfer ya kak, mohon segera diproses dan dikirim.", time: "08:15 AM", type: "text" }
-                ]
-            },
-            {
-                id: 4,
-                name: "+62 899-7654-3210",
-                phone: "+62 899-7654-3210",
-                status: "Bot",
-                avatar: "?",
-                avatarBg: "bg-gradient-to-tr from-slate-400 to-slate-500",
-                unread: 1,
-                messages: [
-                    { sender: "customer", text: "Minta daftar harga grosir dong gan.", time: "Mon 11:20 AM", type: "text" }
-                ]
-            },
-            {
-                id: 5,
-                name: "Clara Anastasia",
-                phone: "+62 853-4455-6677",
-                status: "Live CS",
-                avatar: "CA",
-                avatarBg: "bg-gradient-to-tr from-rose-400 to-rose-600",
-                unread: 0,
-                messages: [
-                    { sender: "customer", text: "Mbak, pesanan saya #INV-7762 sudah sampai. Barangnya bagus sekali!", time: "2 days ago", type: "text" },
-                    { sender: "agent", text: "Wah, senang sekali mendengarnya Kak Clara! Terima kasih atas feedback positif dan kepercayaannya.", time: "2 days ago", type: "text" },
-                    { sender: "customer", text: "Sama-sama kak, terima kasih kembali!", time: "2 days ago", type: "text" }
-                ]
+        // Core Chat Database
+        let chats = [];
+
+        async function loadChatsFromServer() {
+            try {
+                const response = await fetch("/api/chats");
+                if (response.ok) {
+                    chats = await response.json();
+                    renderChatList();
+                    if (activeChatId) {
+                        const stillExists = chats.find(c => c.id === activeChatId);
+                        if (stillExists) {
+                            renderMessages();
+                        } else {
+                            activeChatId = null;
+                            welcomeScreenEl.classList.remove("hidden");
+                            welcomeScreenEl.classList.add("flex");
+                            chatWindowContainerEl.classList.add("hidden");
+                            chatWindowContainerEl.classList.remove("flex");
+                        }
+                    }
+                    updateDashboardStats();
+                } else {
+                    console.error("Failed to load chats from server");
+                }
+            } catch (err) {
+                console.error("Error fetching chats:", err);
             }
-        ];
+        }
+
+        let ws;
+        function initWebSocket() {
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log("WebSocket connected to", wsUrl);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketEvent(data);
+                } catch (err) {
+                    console.error("Failed to parse WS message:", err);
+                }
+            };
+
+            ws.onclose = () => {
+                console.warn("WebSocket disconnected. Retrying in 3 seconds...");
+                setTimeout(initWebSocket, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+            };
+        }
+
+        function handleWebSocketEvent(evt) {
+            console.log("WebSocket Event received:", evt);
+            const { event_type, phone, name, session_id, message, timestamp } = evt;
+            
+            const timeObj = timestamp ? new Date(timestamp) : new Date();
+            const timeStr = timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            let chat = chats.find(c => c.phone === phone);
+            
+            if (!chat) {
+                chat = {
+                    id: session_id,
+                    name: name || phone,
+                    phone: phone,
+                    status: "Bot",
+                    avatar: (name || "?").substring(0, 2).toUpperCase(),
+                    avatarBg: "bg-gradient-to-tr from-slate-400 to-slate-500",
+                    unread: 0,
+                    messages: []
+                };
+                chats.unshift(chat);
+            }
+
+            if (event_type === "escalated") {
+                chat.status = "Live CS";
+                // Avoid duplicating system messages
+                const claimMsg = `Percakapan diambil alih oleh Live CS`;
+                const exists = chat.messages.some(m => m.sender === "system" && m.text.includes("Live CS"));
+                if (!exists) {
+                    chat.messages.push({
+                        sender: "system",
+                        text: claimMsg,
+                        time: timeStr,
+                        type: "system"
+                    });
+                }
+                
+                if (message && message !== "Percakapan diambil alih oleh Live CS") {
+                    chat.messages.push({
+                        sender: "customer",
+                        text: message,
+                        time: timeStr,
+                        type: "text"
+                    });
+                }
+                
+                showToast(`Chat with ${chat.name} claimed for Live CS`, "success");
+            } else if (event_type === "new_message") {
+                chat.messages.push({
+                    sender: "customer",
+                    text: message,
+                    time: timeStr,
+                    type: "text"
+                });
+                
+                if (activeChatId !== chat.id) {
+                    chat.unread += 1;
+                    showNotificationSound();
+                }
+            } else if (event_type === "agent_message") {
+                const exists = chat.messages.some(m => m.sender === "agent" && m.text === message);
+                if (!exists) {
+                    chat.messages.push({
+                        sender: "agent",
+                        text: message,
+                        time: timeStr,
+                        type: "text"
+                    });
+                }
+            } else if (event_type === "session_closed") {
+                chat.status = "Bot";
+                const closeMsg = message || `Percakapan dialihkan ke Bot Asisten`;
+                const exists = chat.messages.some(m => m.sender === "system" && m.text.includes("dialihkan"));
+                if (!exists) {
+                    chat.messages.push({
+                        sender: "system",
+                        text: closeMsg,
+                        time: timeStr,
+                        type: "system"
+                    });
+                }
+                
+                if (activeChatId === chat.id) {
+                    updateHeaderBadge("Bot");
+                    updateHandoverButton("Bot");
+                }
+                showToast(`Session closed for ${chat.name}`, "info");
+            }
+
+            renderChatList();
+            if (activeChatId === chat.id) {
+                renderMessages();
+                messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
+            }
+            updateDashboardStats();
+        }
 
         // Active Application State
         let activeChatId = null;
@@ -401,9 +477,9 @@
 
         // Initialize App on load
         window.addEventListener("DOMContentLoaded", () => {
-            renderChatList();
+            loadChatsFromServer();
             renderQuickReplies();
-            updateDashboardStats();
+            initWebSocket();
         });
 
         // Set status dropdown open/close toggler
@@ -686,41 +762,70 @@
         }
 
         // Toggle Handover Workflow (Bot <-> Live CS)
-        function toggleHandover() {
+        async function toggleHandover() {
             const chat = chats.find(c => c.id === activeChatId);
             if (!chat) return;
 
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const isClosing = chat.status === "Live CS";
+            const endpoint = isClosing ? "/api/sessions/close" : "/api/sessions/claim";
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        phone: chat.phone
+                    })
+                });
 
-            if (chat.status === "Live CS") {
-                // Transfer to Bot
-                chat.status = "Bot";
-                chat.messages.push({
-                    sender: "system",
-                    text: `Percakapan dialihkan ke Bot Asisten oleh ${agentStatus === "Online" ? "Sarah Jenkins" : "Agen"}`,
-                    time: timeStr,
-                    type: "system"
-                });
-                showToast("Chat handed over to Bot successfully", "info");
-            } else {
-                // Claim Chat
-                chat.status = "Live CS";
-                chat.messages.push({
-                    sender: "system",
-                    text: `Percakapan diambil alih oleh Live CS (Sarah Jenkins)`,
-                    time: timeStr,
-                    type: "system"
-                });
-                showToast("You have claimed this chat session", "success");
+                if (response.ok) {
+                    const now = new Date();
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    if (isClosing) {
+                        chat.status = "Bot";
+                        const closeMsg = `Percakapan dialihkan ke Bot Asisten oleh ${agentStatus === "Online" ? "Sarah Jenkins" : "Agen"}`;
+                        const exists = chat.messages.some(m => m.sender === "system" && m.text.includes("dialihkan"));
+                        if (!exists) {
+                            chat.messages.push({
+                                sender: "system",
+                                text: closeMsg,
+                                time: timeStr,
+                                type: "system"
+                            });
+                        }
+                        showToast("Chat handed over to Bot successfully", "info");
+                    } else {
+                        chat.status = "Live CS";
+                        const claimMsg = `Percakapan diambil alih oleh Live CS (Sarah Jenkins)`;
+                        const exists = chat.messages.some(m => m.sender === "system" && m.text.includes("diambil alih"));
+                        if (!exists) {
+                            chat.messages.push({
+                                sender: "system",
+                                text: claimMsg,
+                                time: timeStr,
+                                type: "system"
+                            });
+                        }
+                        showToast("You have claimed this chat session", "success");
+                    }
+
+                    // Update UI elements
+                    updateHeaderBadge(chat.status);
+                    updateHandoverButton(chat.status);
+                    renderMessages();
+                    renderChatList();
+                    updateDashboardStats();
+                } else {
+                    const errData = await response.json();
+                    showToast(`Error: ${errData.error || "Action failed"}`, "info");
+                }
+            } catch (err) {
+                console.error("Error toggling handover:", err);
+                showToast("Network error. Action failed.", "info");
             }
-
-            // Update UI elements
-            updateHeaderBadge(chat.status);
-            updateHandoverButton(chat.status);
-            renderMessages();
-            renderChatList();
-            updateDashboardStats();
         }
 
         // Render Message Bubbles
@@ -810,7 +915,7 @@
         }
 
         // Send Message action
-        function sendMessage(e) {
+        async function sendMessage(e) {
             e.preventDefault();
             const text = messageInputEl.value.trim();
             if (text === "") return;
@@ -821,11 +926,9 @@
             const now = new Date();
             const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-            // Push agent response (if CS mode) or simulated agent response
-            const senderType = chat.status === "Live CS" ? "agent" : "customer";
-            
+            // Push agent response speculatively
             chat.messages.push({
-                sender: senderType,
+                sender: "agent",
                 text: text,
                 time: timeStr,
                 type: "text"
@@ -840,13 +943,34 @@
             renderChatList();
             updateDashboardStats();
 
-            // Simulate responses based on workflow mode
-            if (chat.status === "Bot") {
-                // If it is in Bot mode, the chatbot automatically responds after 1.2s
-                simulateBotResponse(chat, text);
-            } else {
-                // If in Live CS mode, simulate customer replying to Agent after 3s
-                simulateCustomerResponse(chat);
+            try {
+                const response = await fetch("/api/messages/send", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        phone: chat.phone,
+                        message: text
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    showToast(`Error: ${errData.error || "Failed to send message"}`, "info");
+                    // Remove speculative message on error
+                    chat.messages.pop();
+                    renderMessages();
+                    renderChatList();
+                    updateDashboardStats();
+                }
+            } catch (err) {
+                console.error("Error sending message:", err);
+                showToast("Network error. Failed to send message.", "info");
+                chat.messages.pop();
+                renderMessages();
+                renderChatList();
+                updateDashboardStats();
             }
         }
 

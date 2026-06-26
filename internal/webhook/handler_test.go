@@ -83,6 +83,56 @@ func (m *mockStore) LogMessage(ctx context.Context, sessionID string, sender str
 	return nil
 }
 
+func (m *mockStore) GetChatSessions(ctx context.Context) ([]*db.ChatSessionDetail, error) {
+	var details []*db.ChatSessionDetail
+	for _, s := range m.sessions {
+		contactName := "Customer"
+		if c, ok := m.contacts[s.CustomerPhoneNumber]; ok {
+			contactName = c.Name
+		}
+		sd := &db.ChatSessionDetail{
+			ID:                  s.ID,
+			CustomerPhoneNumber: s.CustomerPhoneNumber,
+			CustomerName:        contactName,
+			CurrentHandler:      s.CurrentHandler,
+			SessionStatus:       s.SessionStatus,
+			CreatedAt:           s.CreatedAt,
+			UpdatedAt:           s.UpdatedAt,
+		}
+		for _, msg := range m.messages {
+			if msg.SessionID == s.ID {
+				sd.Messages = append(sd.Messages, &db.Message{
+					ID:                   msg.ID,
+					SessionID:            msg.SessionID,
+					SenderPhoneNumber:    msg.SenderPhoneNumber,
+					RecipientPhoneNumber: msg.RecipientPhoneNumber,
+					Body:                 msg.Body,
+					Timestamp:            msg.Timestamp,
+				})
+			}
+		}
+		details = append(details, sd)
+	}
+	return details, nil
+}
+
+func (m *mockStore) GetSessionMessages(ctx context.Context, sessionID string) ([]*db.Message, error) {
+	var msgs []*db.Message
+	for _, msg := range m.messages {
+		if msg.SessionID == sessionID {
+			msgs = append(msgs, &db.Message{
+				ID:                   msg.ID,
+				SessionID:            msg.SessionID,
+				SenderPhoneNumber:    msg.SenderPhoneNumber,
+				RecipientPhoneNumber: msg.RecipientPhoneNumber,
+				Body:                 msg.Body,
+				Timestamp:            msg.Timestamp,
+			})
+		}
+	}
+	return msgs, nil
+}
+
 func (m *mockStore) Close() error { return nil }
 
 // ─── Mock Sender ─────────────────────────────────────────────────────────────
@@ -539,4 +589,89 @@ func TestHandleEvent_ContactPriority(t *testing.T) {
 	if !strings.Contains(sender.messages[0].text, "VIP Customer") {
 		t.Errorf("reply should use DB name 'VIP Customer', got: %s", sender.messages[0].text)
 	}
+}
+
+func TestDashboardAPI(t *testing.T) {
+	store := newMockStore()
+	sender := &mockSender{}
+	handler := newTestHandlerWithStore("valid-token", sender, store)
+
+	ctx := context.Background()
+	_, _ = store.GetOrCreateContact(ctx, "6281234567890", "John Doe")
+	session, _ := store.CreateSession(ctx, "6281234567890", "human", "open")
+	_ = store.LogMessage(ctx, session.ID, "6281234567890", "system", "Hello from customer")
+
+	t.Run("HandleGetChats", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/chats", nil)
+		rec := httptest.NewRecorder()
+		handler.HandleGetChats(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		
+		body := rec.Body.String()
+		if !strings.Contains(body, "John Doe") || !strings.Contains(body, "Hello from customer") {
+			t.Errorf("expected JSON to contain contact name and message, got: %s", body)
+		}
+	})
+
+	t.Run("HandleSendMessage", func(t *testing.T) {
+		reqBody := `{"phone":"+62 812-3456-7890", "message":"Reply from agent"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/messages/send", strings.NewReader(reqBody))
+		rec := httptest.NewRecorder()
+		handler.HandleSendMessage(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d (body: %s)", rec.Code, rec.Body.String())
+		}
+
+		if len(sender.messages) != 1 {
+			t.Fatalf("expected 1 sent message, got %d", len(sender.messages))
+		}
+		if sender.messages[0].text != "Reply from agent" || sender.messages[0].to != "6281234567890" {
+			t.Errorf("unexpected sent message detail: %+v", sender.messages[0])
+		}
+	})
+
+	t.Run("HandleCloseSession", func(t *testing.T) {
+		reqBody := `{"phone":"6281234567890"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/close", strings.NewReader(reqBody))
+		rec := httptest.NewRecorder()
+		handler.HandleCloseSession(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+
+		session, err := store.GetActiveSession(ctx, "6281234567890")
+		if err != nil {
+			t.Fatalf("failed to query active session: %v", err)
+		}
+		if session != nil {
+			t.Errorf("expected no active session, got %+v", session)
+		}
+	})
+
+	t.Run("HandleClaimSession", func(t *testing.T) {
+		reqBody := `{"phone":"6281234567890"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/claim", strings.NewReader(reqBody))
+		rec := httptest.NewRecorder()
+		handler.HandleClaimSession(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+
+		session, err := store.GetActiveSession(ctx, "6281234567890")
+		if err != nil {
+			t.Fatalf("failed to query active session: %v", err)
+		}
+		if session == nil {
+			t.Fatalf("expected active session, got nil")
+		}
+		if session.CurrentHandler != "human" || session.SessionStatus != "open" {
+			t.Errorf("unexpected session fields: %+v", session)
+		}
+	})
 }

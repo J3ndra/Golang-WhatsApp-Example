@@ -82,6 +82,24 @@ func main() {
 	//   const socket = new WebSocket("ws://<host>/ws");
 	mux.HandleFunc("GET /ws", wsHub.ServeWS)
 
+	// Dashboard static serving endpoints
+	mux.HandleFunc("GET /dashboard", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "dashboard.html")
+	})
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, "dashboard.html")
+	})
+
+	// CS Dashboard REST API endpoints
+	mux.HandleFunc("GET /api/chats", whHandler.HandleGetChats)
+	mux.HandleFunc("POST /api/messages/send", whHandler.HandleSendMessage)
+	mux.HandleFunc("POST /api/sessions/close", whHandler.HandleCloseSession)
+	mux.HandleFunc("POST /api/sessions/claim", whHandler.HandleClaimSession)
+
 	// Health-check endpoint for Docker / load-balancer probes.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

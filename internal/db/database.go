@@ -29,6 +29,18 @@ type ChatSession struct {
 	UpdatedAt           time.Time
 }
 
+// ChatSessionDetail contains a session's details along with contact name and messages.
+type ChatSessionDetail struct {
+	ID                  string
+	CustomerPhoneNumber string
+	CustomerName        string
+	CurrentHandler      string
+	SessionStatus       string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	Messages            []*Message
+}
+
 // Message represents the messages table record.
 type Message struct {
 	ID                   string
@@ -47,6 +59,8 @@ type Store interface {
 	UpdateSessionHandler(ctx context.Context, sessionID string, handler string) error
 	UpdateSessionStatus(ctx context.Context, sessionID string, status string) error
 	LogMessage(ctx context.Context, sessionID string, sender string, recipient string, body string) error
+	GetChatSessions(ctx context.Context) ([]*ChatSessionDetail, error)
+	GetSessionMessages(ctx context.Context, sessionID string) ([]*Message, error)
 	Close() error
 }
 
@@ -224,4 +238,65 @@ func (s *SQLStore) LogMessage(ctx context.Context, sessionID string, sender stri
 		return fmt.Errorf("failed to log message: %w", err)
 	}
 	return nil
+}
+
+// GetChatSessions queries all chat sessions joined with contact names, sorted by last update.
+func (s *SQLStore) GetChatSessions(ctx context.Context) ([]*ChatSessionDetail, error) {
+	query := `
+		SELECT s.id, s.customer_phone_number, c.name, s.current_handler, s.session_status, s.created_at, s.updated_at
+		FROM chat_sessions s
+		JOIN contacts c ON s.customer_phone_number = c.phone_number
+		ORDER BY s.updated_at DESC;
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chat sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*ChatSessionDetail
+	for rows.Next() {
+		var sd ChatSessionDetail
+		err := rows.Scan(&sd.ID, &sd.CustomerPhoneNumber, &sd.CustomerName, &sd.CurrentHandler, &sd.SessionStatus, &sd.CreatedAt, &sd.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan chat session detail: %w", err)
+		}
+		sessions = append(sessions, &sd)
+	}
+
+	for _, sd := range sessions {
+		msgs, err := s.GetSessionMessages(ctx, sd.ID)
+		if err != nil {
+			return nil, err
+		}
+		sd.Messages = msgs
+	}
+
+	return sessions, nil
+}
+
+// GetSessionMessages fetches all messages recorded in a chat session.
+func (s *SQLStore) GetSessionMessages(ctx context.Context, sessionID string) ([]*Message, error) {
+	query := `
+		SELECT id, session_id, sender_phone_number, recipient_phone_number, body, timestamp
+		FROM messages
+		WHERE session_id = ?
+		ORDER BY timestamp ASC;
+	`
+	rows, err := s.db.QueryContext(ctx, query, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []*Message
+	for rows.Next() {
+		var m Message
+		err := rows.Scan(&m.ID, &m.SessionID, &m.SenderPhoneNumber, &m.RecipientPhoneNumber, &m.Body, &m.Timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan message: %w", err)
+		}
+		messages = append(messages, &m)
+	}
+	return messages, nil
 }

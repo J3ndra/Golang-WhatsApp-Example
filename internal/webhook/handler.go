@@ -455,3 +455,337 @@ func extractBody(msg Message) string {
 	}
 	return fmt.Sprintf("[%s message]", msg.Type)
 }
+
+// sanitizePhone removes spaces, dashes, and plus signs from a phone number string.
+func sanitizePhone(phone string) string {
+	phone = strings.ReplaceAll(phone, "+", "")
+	phone = strings.ReplaceAll(phone, "-", "")
+	phone = strings.ReplaceAll(phone, " ", "")
+	return phone
+}
+
+// HandleGetChats returns all sessions and messages formatted for the frontend dashboard.
+func (h *Handler) HandleGetChats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	sessions, err := h.dbStore.GetChatSessions(r.Context())
+	if err != nil {
+		slog.Error("failed to get chat sessions", "error", err)
+		http.Error(w, `{"error":"failed to fetch chats"}`, http.StatusInternalServerError)
+		return
+	}
+	
+	// Map database session models to the structure expected by the frontend
+	type FrontendMessage struct {
+		Sender string `json:"sender"`
+		Text   string `json:"text"`
+		Time   string `json:"time"`
+		Type   string `json:"type"`
+	}
+	
+	type FrontendChat struct {
+		ID       string            `json:"id"`
+		Name     string            `json:"name"`
+		Phone    string            `json:"phone"`
+		Status   string            `json:"status"` // "Live CS" or "Bot"
+		Avatar   string            `json:"avatar"`
+		AvatarBg string            `json:"avatarBg"`
+		Unread   int               `json:"unread"`
+		Messages []FrontendMessage `json:"messages"`
+	}
+	
+	frontendChats := make([]FrontendChat, 0)
+	for _, s := range sessions {
+		status := "Bot"
+		if s.CurrentHandler == "human" {
+			status = "Live CS"
+		}
+		
+		feMsgs := make([]FrontendMessage, 0)
+		for _, m := range s.Messages {
+			senderType := "customer"
+			msgType := "text"
+			
+			if m.SenderPhoneNumber == s.CustomerPhoneNumber {
+				senderType = "customer"
+			} else if m.SenderPhoneNumber == "bot" {
+				senderType = "bot"
+			} else if m.SenderPhoneNumber == "agent" {
+				senderType = "agent"
+			} else if m.SenderPhoneNumber == "system" {
+				senderType = "system"
+				msgType = "system"
+			} else {
+				senderType = "agent"
+			}
+			
+			// Format local time safely
+			timeStr := m.Timestamp.Local().Format("03:04 PM")
+			
+			feMsgs = append(feMsgs, FrontendMessage{
+				Sender: senderType,
+				Text:   m.Body,
+				Time:   timeStr,
+				Type:   msgType,
+			})
+		}
+		
+		avatarInitials := "?"
+		nameParts := strings.Fields(s.CustomerName)
+		if len(nameParts) > 0 {
+			avatarInitials = ""
+			for i := 0; i < len(nameParts) && i < 2; i++ {
+				if len(nameParts[i]) > 0 {
+					avatarInitials += string(nameParts[i][0])
+				}
+			}
+			avatarInitials = strings.ToUpper(avatarInitials)
+		}
+		
+		avatarBg := "bg-gradient-to-tr from-slate-400 to-slate-500"
+		gradients := []string{
+			"bg-gradient-to-tr from-emerald-400 to-teal-600",
+			"bg-gradient-to-tr from-purple-400 to-indigo-600",
+			"bg-gradient-to-tr from-blue-400 to-blue-600",
+			"bg-gradient-to-tr from-rose-400 to-rose-600",
+			"bg-gradient-to-tr from-amber-400 to-orange-600",
+		}
+		if len(s.CustomerPhoneNumber) > 0 {
+			sum := 0
+			for _, char := range s.CustomerPhoneNumber {
+				sum += int(char)
+			}
+			avatarBg = gradients[sum%len(gradients)]
+		}
+		
+		frontendChats = append(frontendChats, FrontendChat{
+			ID:       s.ID,
+			Name:     s.CustomerName,
+			Phone:    s.CustomerPhoneNumber,
+			Status:   status,
+			Avatar:   avatarInitials,
+			AvatarBg: avatarBg,
+			Unread:   0,
+			Messages: feMsgs,
+		})
+	}
+	
+	json.NewEncoder(w).Encode(frontendChats)
+}
+
+// SendMessageRequest defines the expected request body for sending messages.
+type SendMessageRequest struct {
+	Phone   string `json:"phone"`
+	Message string `json:"message"`
+}
+
+// HandleSendMessage sends a message via WhatsApp Business API, logs it in DB, and broadcasts it over WebSocket.
+func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req SendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	
+	phone := sanitizePhone(req.Phone)
+	if phone == "" || req.Message == "" {
+		http.Error(w, `{"error":"phone and message are required"}`, http.StatusBadRequest)
+		return
+	}
+	
+	session, err := h.dbStore.GetActiveSession(r.Context(), phone)
+	if err != nil {
+		slog.Error("failed to get active session", "phone", phone, "error", err)
+		http.Error(w, `{"error":"failed to query session"}`, http.StatusInternalServerError)
+		return
+	}
+	
+	if session == nil {
+		session, err = h.dbStore.CreateSession(r.Context(), phone, "human", "open")
+		if err != nil {
+			slog.Error("failed to create session", "phone", phone, "error", err)
+			http.Error(w, `{"error":"failed to create session"}`, http.StatusInternalServerError)
+			return
+		}
+	} else if session.CurrentHandler != "human" {
+		if err := h.dbStore.UpdateSessionHandler(r.Context(), session.ID, "human"); err != nil {
+			slog.Error("failed to update session handler to human", "session_id", session.ID, "error", err)
+		}
+	}
+	
+	if err := h.sender.SendTextMessage(phone, req.Message); err != nil {
+		slog.Error("failed to send WhatsApp message via Meta API", "phone", phone, "error", err)
+		http.Error(w, fmt.Sprintf(`{"error":"failed to send message via WhatsApp: %s"}`, err.Error()), http.StatusBadGateway)
+		return
+	}
+	
+	if err := h.dbStore.LogMessage(r.Context(), session.ID, "agent", phone, req.Message); err != nil {
+		slog.Error("failed to log outbound agent message", "session_id", session.ID, "error", err)
+	}
+	
+	contactName := "Customer"
+	contact, err := h.dbStore.GetOrCreateContact(r.Context(), phone, "Customer")
+	if err == nil && contact.Name != "" {
+		contactName = contact.Name
+	}
+	
+	timestampStr := time.Now().UTC().Format(time.RFC3339)
+	h.hub.Broadcast(ws.WSEvent{
+		EventType: "agent_message",
+		Phone:     phone,
+		Name:      contactName,
+		SessionID: session.ID,
+		Message:   req.Message,
+		Timestamp: timestampStr,
+	})
+	
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// CloseSessionRequest defines the expected request body for closing sessions.
+type CloseSessionRequest struct {
+	Phone string `json:"phone"`
+}
+
+// HandleCloseSession terminates the session for CS dashboard, routes it back to bot.
+func (h *Handler) HandleCloseSession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req CloseSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	
+	phone := sanitizePhone(req.Phone)
+	if phone == "" {
+		http.Error(w, `{"error":"phone is required"}`, http.StatusBadRequest)
+		return
+	}
+	
+	session, err := h.dbStore.GetActiveSession(r.Context(), phone)
+	if err != nil {
+		slog.Error("failed to get active session for close", "phone", phone, "error", err)
+		http.Error(w, `{"error":"failed to query session"}`, http.StatusInternalServerError)
+		return
+	}
+	
+	if session == nil {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"success","message":"no active session to close"}`))
+		return
+	}
+	
+	if err := h.dbStore.UpdateSessionHandler(r.Context(), session.ID, "bot"); err != nil {
+		slog.Error("failed to update session handler to bot", "session_id", session.ID, "error", err)
+		http.Error(w, `{"error":"failed to update session handler"}`, http.StatusInternalServerError)
+		return
+	}
+	
+	if err := h.dbStore.UpdateSessionStatus(r.Context(), session.ID, "closed"); err != nil {
+		slog.Error("failed to update session status to closed", "session_id", session.ID, "error", err)
+		http.Error(w, `{"error":"failed to update session status"}`, http.StatusInternalServerError)
+		return
+	}
+	
+	closeText := "Percakapan dialihkan ke Bot Asisten oleh Agen"
+	if err := h.dbStore.LogMessage(r.Context(), session.ID, "system", "system", closeText); err != nil {
+		slog.Error("failed to log session closed system message", "session_id", session.ID, "error", err)
+	}
+	
+	timestampStr := time.Now().UTC().Format(time.RFC3339)
+	h.hub.Broadcast(ws.WSEvent{
+		EventType: "session_closed",
+		Phone:     phone,
+		Name:      "",
+		SessionID: session.ID,
+		Message:   closeText,
+		Timestamp: timestampStr,
+	})
+	
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// ClaimSessionRequest defines the expected request body for claiming sessions.
+type ClaimSessionRequest struct {
+	Phone string `json:"phone"`
+}
+
+// HandleClaimSession takes over the chat to human mode.
+func (h *Handler) HandleClaimSession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req ClaimSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	
+	phone := sanitizePhone(req.Phone)
+	if phone == "" {
+		http.Error(w, `{"error":"phone is required"}`, http.StatusBadRequest)
+		return
+	}
+	
+	session, err := h.dbStore.GetActiveSession(r.Context(), phone)
+	if err != nil {
+		slog.Error("failed to get active session for claim", "phone", phone, "error", err)
+		http.Error(w, `{"error":"failed to query session"}`, http.StatusInternalServerError)
+		return
+	}
+	
+	if session == nil {
+		session, err = h.dbStore.CreateSession(r.Context(), phone, "human", "open")
+		if err != nil {
+			slog.Error("failed to create session on claim", "phone", phone, "error", err)
+			http.Error(w, `{"error":"failed to create session"}`, http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := h.dbStore.UpdateSessionHandler(r.Context(), session.ID, "human"); err != nil {
+			slog.Error("failed to update session handler to human", "session_id", session.ID, "error", err)
+			http.Error(w, `{"error":"failed to update handler"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	
+	claimText := "Percakapan diambil alih oleh Live CS"
+	if err := h.dbStore.LogMessage(r.Context(), session.ID, "system", "system", claimText); err != nil {
+		slog.Error("failed to log session claimed system message", "session_id", session.ID, "error", err)
+	}
+	
+	contactName := "Customer"
+	contact, err := h.dbStore.GetOrCreateContact(r.Context(), phone, "Customer")
+	if err == nil && contact.Name != "" {
+		contactName = contact.Name
+	}
+	
+	timestampStr := time.Now().UTC().Format(time.RFC3339)
+	h.hub.Broadcast(ws.WSEvent{
+		EventType: "escalated",
+		Phone:     phone,
+		Name:      contactName,
+		SessionID: session.ID,
+		Message:   claimText,
+		Timestamp: timestampStr,
+	})
+	
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
