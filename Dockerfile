@@ -24,6 +24,7 @@ WORKDIR /app
 
 # Copy binary from builder stage
 COPY --from=builder /app/server .
+COPY dashboard.html .
 
 # Expose app port
 EXPOSE 8080
