@@ -1,11 +1,14 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 
+	"github.com/endru/kiw-test/internal/db"
 	"github.com/endru/kiw-test/internal/whatsapp"
 )
 
@@ -20,13 +23,15 @@ type WhatsAppSender interface {
 type Handler struct {
 	verifyToken string
 	sender      WhatsAppSender
+	dbStore     db.Store
 }
 
 // NewHandler creates a new webhook handler.
-func NewHandler(verifyToken string, sender WhatsAppSender) *Handler {
+func NewHandler(verifyToken string, sender WhatsAppSender, dbStore db.Store) *Handler {
 	return &Handler{
 		verifyToken: verifyToken,
 		sender:      sender,
+		dbStore:     dbStore,
 	}
 }
 
@@ -123,7 +128,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 				}
-				h.processMessage(msg, senderName)
+				h.processMessage(r.Context(), msg, senderName)
 			}
 		}
 	}
@@ -133,8 +138,8 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
-// processMessage handles a single incoming message and sends an echo reply.
-func (h *Handler) processMessage(msg Message, senderName string) {
+// processMessage handles a single incoming message, queries/upserts contacts and sessions, and logs/replies.
+func (h *Handler) processMessage(ctx context.Context, msg Message, senderName string) {
 	slog.Info("received message",
 		"from_name", senderName,
 		"from_phone", msg.From,
@@ -142,6 +147,48 @@ func (h *Handler) processMessage(msg Message, senderName string) {
 		"message_id", msg.ID,
 	)
 
+	// 1. Get or create Contact
+	contact, err := h.dbStore.GetOrCreateContact(ctx, msg.From, senderName)
+	if err != nil {
+		slog.Error("failed to get or create contact", "phone", msg.From, "error", err)
+	} else {
+		senderName = contact.Name
+	}
+
+	// 2. Get active session or create new one
+	session, err := h.dbStore.GetActiveSession(ctx, msg.From)
+	if err != nil {
+		slog.Error("failed to get active session", "phone", msg.From, "error", err)
+	}
+	if session == nil {
+		session, err = h.dbStore.CreateSession(ctx, msg.From, "bot", "open")
+		if err != nil {
+			slog.Error("failed to create new session", "phone", msg.From, "error", err)
+			return // Return early since we need a session to track messages properly
+		}
+		slog.Info("created new chat session for customer", "phone", msg.From, "session_id", session.ID)
+	}
+
+	// Extract message body
+	var body string
+	if msg.Type == "text" && msg.Text != nil {
+		body = msg.Text.Body
+	} else {
+		body = fmt.Sprintf("[%s message]", msg.Type)
+	}
+
+	// 3. Log incoming message
+	if err := h.dbStore.LogMessage(ctx, session.ID, msg.From, "system", body); err != nil {
+		slog.Error("failed to log incoming message", "session_id", session.ID, "error", err)
+	}
+
+	// 4. If current handler is human, skip auto-response (bot reply)
+	if session.CurrentHandler == "human" {
+		slog.Info("skipping auto-reply: session is handled by human", "phone", msg.From, "session_id", session.ID)
+		return
+	}
+
+	// 5. Bot auto-reply logic
 	switch msg.Type {
 	case "text":
 		if msg.Text == nil {
@@ -161,6 +208,11 @@ func (h *Handler) processMessage(msg Message, senderName string) {
 					"message_id", msg.ID,
 					"error", err,
 				)
+			} else {
+				// Log outgoing bot response
+				if err := h.dbStore.LogMessage(ctx, session.ID, "bot", msg.From, reply); err != nil {
+					slog.Error("failed to log outgoing button message", "session_id", session.ID, "error", err)
+				}
 			}
 		} else {
 			reply := "Sorry, auto reply message currently not available since this still on development"
@@ -170,6 +222,11 @@ func (h *Handler) processMessage(msg Message, senderName string) {
 					"message_id", msg.ID,
 					"error", err,
 				)
+			} else {
+				// Log outgoing bot response
+				if err := h.dbStore.LogMessage(ctx, session.ID, "bot", msg.From, reply); err != nil {
+					slog.Error("failed to log outgoing text message", "session_id", session.ID, "error", err)
+				}
 			}
 		}
 

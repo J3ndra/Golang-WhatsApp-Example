@@ -1,14 +1,95 @@
 package webhook
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/endru/kiw-test/internal/db"
 	"github.com/endru/kiw-test/internal/whatsapp"
 )
+
+// mockStore mocks db.Store for testing.
+type mockStore struct {
+	contacts map[string]*db.Contact
+	sessions map[string]*db.ChatSession
+	messages []db.Message
+}
+
+func newMockStore() *mockStore {
+	return &mockStore{
+		contacts: make(map[string]*db.Contact),
+		sessions: make(map[string]*db.ChatSession),
+	}
+}
+
+func (m *mockStore) GetOrCreateContact(ctx context.Context, phoneNumber, name string) (*db.Contact, error) {
+	if c, ok := m.contacts[phoneNumber]; ok {
+		c.Name = name
+		return c, nil
+	}
+	c := &db.Contact{PhoneNumber: phoneNumber, Name: name}
+	m.contacts[phoneNumber] = c
+	return c, nil
+}
+
+func (m *mockStore) GetActiveSession(ctx context.Context, customerPhoneNumber string) (*db.ChatSession, error) {
+	for _, s := range m.sessions {
+		if s.CustomerPhoneNumber == customerPhoneNumber && s.SessionStatus == "open" {
+			return s, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CreateSession(ctx context.Context, customerPhoneNumber string, currentHandler, status string) (*db.ChatSession, error) {
+	s := &db.ChatSession{
+		ID:                  "mock-session-id",
+		CustomerPhoneNumber: customerPhoneNumber,
+		CurrentHandler:      currentHandler,
+		SessionStatus:       status,
+	}
+	m.sessions[s.ID] = s
+	return s, nil
+}
+
+func (m *mockStore) UpdateSessionHandler(ctx context.Context, sessionID string, handler string) error {
+	if s, ok := m.sessions[sessionID]; ok {
+		s.CurrentHandler = handler
+		return nil
+	}
+	return fmt.Errorf("session not found")
+}
+
+func (m *mockStore) UpdateSessionStatus(ctx context.Context, sessionID string, status string) error {
+	if s, ok := m.sessions[sessionID]; ok {
+		s.SessionStatus = status
+		return nil
+	}
+	return fmt.Errorf("session not found")
+}
+
+func (m *mockStore) LogMessage(ctx context.Context, sessionID string, sender string, recipient string, body string) error {
+	m.messages = append(m.messages, db.Message{
+		SessionID:            sessionID,
+		SenderPhoneNumber:    sender,
+		RecipientPhoneNumber: recipient,
+		Body:                 body,
+	})
+	return nil
+}
+
+func (m *mockStore) Close() error {
+	return nil
+}
+
+// newTestHandler initializes Handler with a mockStore.
+func newTestHandler(verifyToken string, sender WhatsAppSender) *Handler {
+	return NewHandler(verifyToken, sender, newMockStore())
+}
 
 // mockSender captures sent messages for test assertions.
 type mockSender struct {
@@ -32,7 +113,7 @@ func (m *mockSender) SendButtonMessage(to, text string, buttons []whatsapp.Butto
 }
 
 func TestHandleVerification(t *testing.T) {
-	handler := NewHandler("valid-token", &mockSender{})
+	handler := newTestHandler("valid-token", &mockSender{})
 
 	tests := []struct {
 		name           string
@@ -90,7 +171,7 @@ func TestHandleVerification(t *testing.T) {
 }
 
 func TestHandleVerificationMethodNotAllowed(t *testing.T) {
-	handler := NewHandler("valid-token", &mockSender{})
+	handler := newTestHandler("valid-token", &mockSender{})
 
 	req := httptest.NewRequest(http.MethodPost, "/webhook", nil)
 	rec := httptest.NewRecorder()
@@ -104,7 +185,7 @@ func TestHandleVerificationMethodNotAllowed(t *testing.T) {
 
 func TestHandleEvent_ValidTextMessage(t *testing.T) {
 	sender := &mockSender{}
-	handler := NewHandler("valid-token", sender)
+	handler := newTestHandler("valid-token", sender)
 
 	body := `{
 		"object": "whatsapp_business_account",
@@ -157,7 +238,7 @@ func TestHandleEvent_ValidTextMessage(t *testing.T) {
 }
 
 func TestHandleEvent_EmptyBody(t *testing.T) {
-	handler := NewHandler("valid-token", &mockSender{})
+	handler := newTestHandler("valid-token", &mockSender{})
 
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(""))
 	rec := httptest.NewRecorder()
@@ -170,7 +251,7 @@ func TestHandleEvent_EmptyBody(t *testing.T) {
 }
 
 func TestHandleEvent_InvalidJSON(t *testing.T) {
-	handler := NewHandler("valid-token", &mockSender{})
+	handler := newTestHandler("valid-token", &mockSender{})
 
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader("{bad json"))
 	rec := httptest.NewRecorder()
@@ -183,7 +264,7 @@ func TestHandleEvent_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleEvent_WrongObject(t *testing.T) {
-	handler := NewHandler("valid-token", &mockSender{})
+	handler := newTestHandler("valid-token", &mockSender{})
 
 	body := `{"object": "not_whatsapp", "entry": []}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
@@ -198,7 +279,7 @@ func TestHandleEvent_WrongObject(t *testing.T) {
 
 func TestHandleEvent_StatusOnly(t *testing.T) {
 	sender := &mockSender{}
-	handler := NewHandler("valid-token", sender)
+	handler := newTestHandler("valid-token", sender)
 
 	body := `{
 		"object": "whatsapp_business_account",
@@ -238,7 +319,7 @@ func TestHandleEvent_StatusOnly(t *testing.T) {
 
 func TestHandleEvent_SenderError(t *testing.T) {
 	sender := &mockSender{err: fmt.Errorf("api error")}
-	handler := NewHandler("valid-token", sender)
+	handler := newTestHandler("valid-token", sender)
 
 	body := `{
 		"object": "whatsapp_business_account",
@@ -276,7 +357,7 @@ func TestHandleEvent_SenderError(t *testing.T) {
 
 func TestHandleEvent_MultipleMessages(t *testing.T) {
 	sender := &mockSender{}
-	handler := NewHandler("valid-token", sender)
+	handler := newTestHandler("valid-token", sender)
 
 	body := `{
 		"object": "whatsapp_business_account",
@@ -325,7 +406,7 @@ func TestHandleEvent_MultipleMessages(t *testing.T) {
 }
 
 func TestHandleEvent_MethodNotAllowed(t *testing.T) {
-	handler := NewHandler("valid-token", &mockSender{})
+	handler := newTestHandler("valid-token", &mockSender{})
 
 	req := httptest.NewRequest(http.MethodGet, "/webhook", nil)
 	rec := httptest.NewRecorder()
@@ -339,7 +420,7 @@ func TestHandleEvent_MethodNotAllowed(t *testing.T) {
 
 func TestHandleEvent_KohEndruMessage(t *testing.T) {
 	sender := &mockSender{}
-	handler := NewHandler("valid-token", sender)
+	handler := newTestHandler("valid-token", sender)
 
 	body := `{
 		"object": "whatsapp_business_account",

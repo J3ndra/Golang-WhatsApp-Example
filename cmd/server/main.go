@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/endru/kiw-test/internal/config"
+	"github.com/endru/kiw-test/internal/db"
 	"github.com/endru/kiw-test/internal/webhook"
 	"github.com/endru/kiw-test/internal/whatsapp"
 )
@@ -29,7 +30,17 @@ func main() {
 	slog.Info("configuration loaded",
 		"port", cfg.Port,
 		"api_version", cfg.APIVersion,
+		"db_path", cfg.DBPath,
 	)
+
+	// Initialize SQLite Database.
+	dbStore, err := db.NewSQLStore(cfg.DBPath)
+	if err != nil {
+		slog.Error("failed to initialize SQLite database", "error", err)
+		os.Exit(1)
+	}
+	defer dbStore.Close()
+	slog.Info("SQLite database initialized successfully", "path", cfg.DBPath)
 
 	// Create WhatsApp client.
 	waClient := whatsapp.NewClient(
@@ -40,7 +51,7 @@ func main() {
 	)
 
 	// Create webhook handler.
-	whHandler := webhook.NewHandler(cfg.VerifyToken, waClient)
+	whHandler := webhook.NewHandler(cfg.VerifyToken, waClient, dbStore)
 
 	// Set up routes.
 	mux := http.NewServeMux()

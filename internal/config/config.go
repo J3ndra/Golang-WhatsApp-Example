@@ -14,6 +14,7 @@ type Config struct {
 	AccessToken     string
 	GraphAPIBaseURL string
 	APIVersion      string
+	DBPath          string
 }
 
 // Load reads configuration from environment variables, applies defaults,
@@ -26,6 +27,7 @@ func Load() (*Config, error) {
 		AccessToken:     os.Getenv("WHATSAPP_ACCESS_TOKEN"),
 		GraphAPIBaseURL: envOrDefault("GRAPH_API_BASE_URL", "https://graph.facebook.com"),
 		APIVersion:      envOrDefault("WHATSAPP_API_VERSION", "v22.0"),
+		DBPath:          envOrDefault("DB_PATH", "kiw.db"),
 	}
 
 	var missing []string
