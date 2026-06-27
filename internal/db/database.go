@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,10 @@ type ChatSession struct {
 	CustomerPhoneNumber string
 	CurrentHandler      string // "bot" or "human"
 	SessionStatus       string // "open" or "closed"
+	BotFlowState        string // "idle", "awaiting_pt_name", "awaiting_category", "awaiting_message"
+	TicketPtName        string
+	TicketCategory      string
+	TicketMessage       string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }
@@ -61,6 +66,10 @@ type Store interface {
 	LogMessage(ctx context.Context, sessionID string, sender string, recipient string, body string) error
 	GetChatSessions(ctx context.Context) ([]*ChatSessionDetail, error)
 	GetSessionMessages(ctx context.Context, sessionID string) ([]*Message, error)
+	UpdateBotFlowState(ctx context.Context, sessionID string, state string) error
+	UpdateTicketPtName(ctx context.Context, sessionID string, ptName string) error
+	UpdateTicketCategory(ctx context.Context, sessionID string, category string) error
+	UpdateTicketMessage(ctx context.Context, sessionID string, message string) error
 	Close() error
 }
 
@@ -109,6 +118,10 @@ func (s *SQLStore) migrate() error {
 			customer_phone_number TEXT NOT NULL,
 			current_handler TEXT NOT NULL CHECK(current_handler IN ('bot', 'human')),
 			session_status TEXT NOT NULL CHECK(session_status IN ('open', 'closed')),
+			bot_flow_state TEXT NOT NULL DEFAULT 'idle',
+			ticket_pt_name TEXT NOT NULL DEFAULT '',
+			ticket_category TEXT NOT NULL DEFAULT '',
+			ticket_message TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY(customer_phone_number) REFERENCES contacts(phone_number) ON UPDATE CASCADE
@@ -132,6 +145,33 @@ func (s *SQLStore) migrate() error {
 		if _, err := s.db.Exec(query); err != nil {
 			return fmt.Errorf("migration query failed: %w (query: %s)", err, query)
 		}
+	}
+
+	// Alter table to add bot flow columns if they don't exist
+	if err := s.addColumnIfNotExists("chat_sessions", "bot_flow_state", "TEXT NOT NULL DEFAULT 'idle'"); err != nil {
+		return fmt.Errorf("failed to add column bot_flow_state: %w", err)
+	}
+	if err := s.addColumnIfNotExists("chat_sessions", "ticket_pt_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("failed to add column ticket_pt_name: %w", err)
+	}
+	if err := s.addColumnIfNotExists("chat_sessions", "ticket_category", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("failed to add column ticket_category: %w", err)
+	}
+	if err := s.addColumnIfNotExists("chat_sessions", "ticket_message", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("failed to add column ticket_message: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SQLStore) addColumnIfNotExists(table, column, definition string) error {
+	query := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;", table, column, definition)
+	_, err := s.db.Exec(query)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		}
+		return err
 	}
 	return nil
 }
@@ -160,7 +200,10 @@ func (s *SQLStore) GetOrCreateContact(ctx context.Context, phoneNumber, name str
 // GetActiveSession finds an open session for the customer.
 func (s *SQLStore) GetActiveSession(ctx context.Context, customerPhoneNumber string) (*ChatSession, error) {
 	query := `
-		SELECT id, customer_phone_number, current_handler, session_status, created_at, updated_at
+		SELECT id, customer_phone_number, current_handler, session_status,
+		       COALESCE(bot_flow_state, 'idle'), COALESCE(ticket_pt_name, ''),
+		       COALESCE(ticket_category, ''), COALESCE(ticket_message, ''),
+		       created_at, updated_at
 		FROM chat_sessions
 		WHERE customer_phone_number = ? AND session_status = 'open'
 		LIMIT 1;
@@ -168,7 +211,8 @@ func (s *SQLStore) GetActiveSession(ctx context.Context, customerPhoneNumber str
 	var session ChatSession
 	err := s.db.QueryRowContext(ctx, query, customerPhoneNumber).Scan(
 		&session.ID, &session.CustomerPhoneNumber, &session.CurrentHandler,
-		&session.SessionStatus, &session.CreatedAt, &session.UpdatedAt,
+		&session.SessionStatus, &session.BotFlowState, &session.TicketPtName,
+		&session.TicketCategory, &session.TicketMessage, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -183,14 +227,15 @@ func (s *SQLStore) GetActiveSession(ctx context.Context, customerPhoneNumber str
 func (s *SQLStore) CreateSession(ctx context.Context, customerPhoneNumber string, currentHandler, status string) (*ChatSession, error) {
 	id := uuid.New().String()
 	query := `
-		INSERT INTO chat_sessions (id, customer_phone_number, current_handler, session_status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		RETURNING id, customer_phone_number, current_handler, session_status, created_at, updated_at;
+		INSERT INTO chat_sessions (id, customer_phone_number, current_handler, session_status, bot_flow_state, ticket_pt_name, ticket_category, ticket_message, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'idle', '', '', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		RETURNING id, customer_phone_number, current_handler, session_status, bot_flow_state, ticket_pt_name, ticket_category, ticket_message, created_at, updated_at;
 	`
 	var session ChatSession
 	err := s.db.QueryRowContext(ctx, query, id, customerPhoneNumber, currentHandler, status).Scan(
 		&session.ID, &session.CustomerPhoneNumber, &session.CurrentHandler,
-		&session.SessionStatus, &session.CreatedAt, &session.UpdatedAt,
+		&session.SessionStatus, &session.BotFlowState, &session.TicketPtName,
+		&session.TicketCategory, &session.TicketMessage, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -299,4 +344,56 @@ func (s *SQLStore) GetSessionMessages(ctx context.Context, sessionID string) ([]
 		messages = append(messages, &m)
 	}
 	return messages, nil
+}
+
+func (s *SQLStore) UpdateBotFlowState(ctx context.Context, sessionID string, state string) error {
+	query := `
+		UPDATE chat_sessions
+		SET bot_flow_state = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?;
+	`
+	_, err := s.db.ExecContext(ctx, query, state, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update bot flow state: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLStore) UpdateTicketPtName(ctx context.Context, sessionID string, ptName string) error {
+	query := `
+		UPDATE chat_sessions
+		SET ticket_pt_name = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?;
+	`
+	_, err := s.db.ExecContext(ctx, query, ptName, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update ticket pt name: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLStore) UpdateTicketCategory(ctx context.Context, sessionID string, category string) error {
+	query := `
+		UPDATE chat_sessions
+		SET ticket_category = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?;
+	`
+	_, err := s.db.ExecContext(ctx, query, category, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update ticket category: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLStore) UpdateTicketMessage(ctx context.Context, sessionID string, message string) error {
+	query := `
+		UPDATE chat_sessions
+		SET ticket_message = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?;
+	`
+	_, err := s.db.ExecContext(ctx, query, message, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update ticket message: %w", err)
+	}
+	return nil
 }

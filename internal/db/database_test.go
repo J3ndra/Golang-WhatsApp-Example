@@ -111,4 +111,54 @@ func TestSQLStore(t *testing.T) {
 			t.Fatalf("failed to log outgoing message: %v", err)
 		}
 	})
+
+	// 4. Test Ticket Form fields and state helpers
+	t.Run("TicketFields", func(t *testing.T) {
+		_, err := store.GetOrCreateContact(ctx, "+9999999999", "Ticket User")
+		if err != nil {
+			t.Fatalf("failed to create contact: %v", err)
+		}
+
+		session, err := store.CreateSession(ctx, "+9999999999", "bot", "open")
+		if err != nil {
+			t.Fatalf("failed to create session: %v", err)
+		}
+
+		// Initial states
+		if session.BotFlowState != "idle" || session.TicketPtName != "" || session.TicketCategory != "" || session.TicketMessage != "" {
+			t.Errorf("expected clean initial fields, got: %+v", session)
+		}
+
+		// Update fields
+		if err := store.UpdateBotFlowState(ctx, session.ID, "awaiting_pt_name"); err != nil {
+			t.Fatalf("failed to update bot flow state: %v", err)
+		}
+		if err := store.UpdateTicketPtName(ctx, session.ID, "PT Test"); err != nil {
+			t.Fatalf("failed to update ticket pt name: %v", err)
+		}
+		if err := store.UpdateTicketCategory(ctx, session.ID, "Billing"); err != nil {
+			t.Fatalf("failed to update ticket category: %v", err)
+		}
+		if err := store.UpdateTicketMessage(ctx, session.ID, "Need help with billing"); err != nil {
+			t.Fatalf("failed to update ticket message: %v", err)
+		}
+
+		// Query and verify
+		active, err := store.GetActiveSession(ctx, "+9999999999")
+		if err != nil {
+			t.Fatalf("failed to query active session: %v", err)
+		}
+		if active.BotFlowState != "awaiting_pt_name" {
+			t.Errorf("expected state awaiting_pt_name, got %s", active.BotFlowState)
+		}
+		if active.TicketPtName != "PT Test" {
+			t.Errorf("expected TicketPtName PT Test, got %s", active.TicketPtName)
+		}
+		if active.TicketCategory != "Billing" {
+			t.Errorf("expected TicketCategory Billing, got %s", active.TicketCategory)
+		}
+		if active.TicketMessage != "Need help with billing" {
+			t.Errorf("expected TicketMessage Need help with billing, got %s", active.TicketMessage)
+		}
+	})
 }

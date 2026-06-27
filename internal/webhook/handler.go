@@ -276,7 +276,13 @@ func (h *Handler) processMessage(ctx context.Context, msg Message, whatsappName 
 //   - Escalation text or button → update handler to "human", emit WS event
 func (h *Handler) handleBotMode(ctx context.Context, msg Message, session *db.ChatSession, name, body string) {
 	slog.Info("step C: bot mode processing",
-		"phone", msg.From, "type", msg.Type, "body", body)
+		"phone", msg.From, "type", msg.Type, "body", body, "state", session.BotFlowState)
+
+	// Check if session has an active ticket creation form state.
+	if session.BotFlowState != "" && session.BotFlowState != "idle" {
+		h.handleTicketFormFlow(ctx, msg, session, name, body)
+		return
+	}
 
 	switch msg.Type {
 
@@ -295,11 +301,17 @@ func (h *Handler) handleBotMode(ctx context.Context, msg Message, session *db.Ch
 			return
 		}
 
+		// Check if user specifically requested to create a ticket by text
+		if normalized == "create a ticket" || normalized == "ticket" {
+			h.initiateTicketForm(ctx, msg.From, session, name)
+			return
+		}
+
 		// Any other text while bot is handling — send a generic holding reply.
 		reply := fmt.Sprintf(
 			"Hi %s! 👋 I'm your virtual assistant. "+
-				"Type *Hello* to start, or tap *Ask other question* "+
-				"to speak with a human agent.", name)
+				"Type *Hello* to start, or tap *Create a ticket* "+
+				"to make a support ticket.", name)
 		if err := h.sender.SendTextMessage(msg.From, reply); err != nil {
 			slog.Error("step C: failed to send generic bot reply",
 				"phone", msg.From, "error", err)
@@ -331,6 +343,11 @@ func (h *Handler) handleBotMode(ctx context.Context, msg Message, session *db.Ch
 			return
 		}
 
+		if buttonID == "btn_ticket" {
+			h.initiateTicketForm(ctx, msg.From, session, name)
+			return
+		}
+
 		// Non-escalation button — log and acknowledge.
 		slog.Info("step C: non-escalation button, no action taken",
 			"button_id", buttonID)
@@ -341,14 +358,154 @@ func (h *Handler) handleBotMode(ctx context.Context, msg Message, session *db.Ch
 	}
 }
 
+// initiateTicketForm sets up the session state for the ticket form and prompts the user.
+func (h *Handler) initiateTicketForm(ctx context.Context, phone string, session *db.ChatSession, name string) {
+	slog.Info("initiating ticket form", "phone", phone, "session_id", session.ID)
+
+	if err := h.dbStore.UpdateBotFlowState(ctx, session.ID, "awaiting_pt_name"); err != nil {
+		slog.Error("failed to update bot flow state to awaiting_pt_name", "error", err)
+		return
+	}
+
+	replyText := "Name of your PT:"
+	if err := h.sender.SendTextMessage(phone, replyText); err != nil {
+		slog.Error("failed to send pt name prompt", "phone", phone, "error", err)
+		return
+	}
+
+	h.dbStore.LogMessage(ctx, session.ID, "bot", phone, replyText)
+}
+
+// handleTicketFormFlow processes each step of the ticket creation wizard.
+func (h *Handler) handleTicketFormFlow(ctx context.Context, msg Message, session *db.ChatSession, name, body string) {
+	slog.Info("processing ticket form flow", "phone", msg.From, "state", session.BotFlowState, "body", body)
+
+	normalized := strings.ToLower(strings.TrimSpace(body))
+
+	// Check if user wants to escalate / cancel the form flow
+	_, isEscalation := escalationPhrases[normalized]
+	var isEscalationButton bool
+	if msg.Type == "interactive" && msg.Interactive != nil {
+		buttonID := msg.Interactive.ButtonReply.ID
+		buttonTitle := msg.Interactive.ButtonReply.Title
+		_, idMatch := escalationButtonIDs[buttonID]
+		_, titleMatch := escalationPhrases[strings.ToLower(strings.TrimSpace(buttonTitle))]
+		if idMatch || titleMatch {
+			isEscalationButton = true
+		}
+	}
+
+	if isEscalation || isEscalationButton {
+		h.dbStore.UpdateBotFlowState(ctx, session.ID, "idle")
+		h.escalateToHuman(ctx, msg.From, session, name, body)
+		return
+	}
+
+	switch session.BotFlowState {
+	case "awaiting_pt_name":
+		if err := h.dbStore.UpdateTicketPtName(ctx, session.ID, body); err != nil {
+			slog.Error("failed to save ticket pt name", "error", err)
+			return
+		}
+		if err := h.dbStore.UpdateBotFlowState(ctx, session.ID, "awaiting_category"); err != nil {
+			slog.Error("failed to update bot flow state", "error", err)
+			return
+		}
+
+		replyText := "Ticket Category"
+		buttons := []whatsapp.Button{
+			{ID: "cat_technical", Title: "Technical Support"},
+			{ID: "cat_billing",   Title: "Billing & Account"},
+			{ID: "cat_general",   Title: "General Inquiry"},
+		}
+
+		if err := h.sender.SendButtonMessage(msg.From, replyText, buttons); err != nil {
+			slog.Error("failed to send category prompt", "phone", msg.From, "error", err)
+			return
+		}
+
+		h.dbStore.LogMessage(ctx, session.ID, "bot", msg.From, replyText)
+
+	case "awaiting_category":
+		category := body
+		if msg.Type == "interactive" && msg.Interactive != nil {
+			category = msg.Interactive.ButtonReply.Title
+		}
+
+		if err := h.dbStore.UpdateTicketCategory(ctx, session.ID, category); err != nil {
+			slog.Error("failed to save ticket category", "error", err)
+			return
+		}
+		if err := h.dbStore.UpdateBotFlowState(ctx, session.ID, "awaiting_message"); err != nil {
+			slog.Error("failed to update bot flow state", "error", err)
+			return
+		}
+
+		replyText := "Message of the ticket:"
+		if err := h.sender.SendTextMessage(msg.From, replyText); err != nil {
+			slog.Error("failed to send message prompt", "phone", msg.From, "error", err)
+			return
+		}
+
+		h.dbStore.LogMessage(ctx, session.ID, "bot", msg.From, replyText)
+
+	case "awaiting_message":
+		if err := h.dbStore.UpdateTicketMessage(ctx, session.ID, body); err != nil {
+			slog.Error("failed to save ticket message", "error", err)
+			return
+		}
+		if err := h.dbStore.UpdateBotFlowState(ctx, session.ID, "idle"); err != nil {
+			slog.Error("failed to update bot flow state", "error", err)
+			return
+		}
+
+		replyText := "Thankyou for your answer, we will check your ticket as soon as possible"
+		if err := h.sender.SendTextMessage(msg.From, replyText); err != nil {
+			slog.Error("failed to send thanks message", "phone", msg.From, "error", err)
+		} else {
+			h.dbStore.LogMessage(ctx, session.ID, "bot", msg.From, replyText)
+		}
+
+		updatedSession, err := h.dbStore.GetActiveSession(ctx, msg.From)
+		ptName := ""
+		category := ""
+		ticketMsg := ""
+		if err == nil && updatedSession != nil {
+			ptName = updatedSession.TicketPtName
+			category = updatedSession.TicketCategory
+			ticketMsg = updatedSession.TicketMessage
+		}
+
+		if err := h.dbStore.UpdateSessionHandler(ctx, session.ID, "human"); err != nil {
+			slog.Error("failed to update session handler to human", "session_id", session.ID, "error", err)
+		}
+
+		summaryMsg := fmt.Sprintf("🎫 *New Ticket Created*\n• PT Name: %s\n• Category: %s\n• Message: %s", ptName, category, ticketMsg)
+		if err := h.dbStore.LogMessage(ctx, session.ID, "system", msg.From, summaryMsg); err != nil {
+			slog.Error("failed to log ticket summary message", "session_id", session.ID, "error", err)
+		}
+
+		h.hub.Broadcast(ws.WSEvent{
+			EventType: "escalated",
+			Phone:     msg.From,
+			Name:      name,
+			SessionID: session.ID,
+			Message:   summaryMsg,
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+
+		slog.Info("ticket flow complete, escalated to human", "phone", msg.From)
+	}
+}
+
 // sendGreetingReply sends "Hi [Name], how can I help you?" plus two quick-reply
 // buttons: one for help and one to escalate to a human agent.
 func (h *Handler) sendGreetingReply(phone string, session *db.ChatSession, name, originalBody string) {
 	replyText := fmt.Sprintf("Hi %s! 👋 How can I help you today?", name)
 
 	buttons := []whatsapp.Button{
-		{ID: "btn_faq",       Title: "View FAQ"},
-		{ID: "btn_ask_other", Title: "Ask other question"},
+		{ID: "btn_ticket",     Title: "Create a ticket"},
+		{ID: "btn_ask_other",  Title: "Ask other question"},
 	}
 
 	if err := h.sender.SendButtonMessage(phone, replyText, buttons); err != nil {

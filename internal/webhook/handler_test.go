@@ -52,6 +52,10 @@ func (m *mockStore) CreateSession(ctx context.Context, customerPhoneNumber strin
 		CustomerPhoneNumber: customerPhoneNumber,
 		CurrentHandler:      currentHandler,
 		SessionStatus:       status,
+		BotFlowState:        "idle",
+		TicketPtName:        "",
+		TicketCategory:      "",
+		TicketMessage:       "",
 	}
 	m.sessions[s.ID] = s
 	return s, nil
@@ -68,6 +72,38 @@ func (m *mockStore) UpdateSessionHandler(ctx context.Context, sessionID string, 
 func (m *mockStore) UpdateSessionStatus(ctx context.Context, sessionID string, status string) error {
 	if s, ok := m.sessions[sessionID]; ok {
 		s.SessionStatus = status
+		return nil
+	}
+	return fmt.Errorf("session not found")
+}
+
+func (m *mockStore) UpdateBotFlowState(ctx context.Context, sessionID string, state string) error {
+	if s, ok := m.sessions[sessionID]; ok {
+		s.BotFlowState = state
+		return nil
+	}
+	return fmt.Errorf("session not found")
+}
+
+func (m *mockStore) UpdateTicketPtName(ctx context.Context, sessionID string, ptName string) error {
+	if s, ok := m.sessions[sessionID]; ok {
+		s.TicketPtName = ptName
+		return nil
+	}
+	return fmt.Errorf("session not found")
+}
+
+func (m *mockStore) UpdateTicketCategory(ctx context.Context, sessionID string, category string) error {
+	if s, ok := m.sessions[sessionID]; ok {
+		s.TicketCategory = category
+		return nil
+	}
+	return fmt.Errorf("session not found")
+}
+
+func (m *mockStore) UpdateTicketMessage(ctx context.Context, sessionID string, message string) error {
+	if s, ok := m.sessions[sessionID]; ok {
+		s.TicketMessage = message
 		return nil
 	}
 	return fmt.Errorf("session not found")
@@ -672,6 +708,194 @@ func TestDashboardAPI(t *testing.T) {
 		}
 		if session.CurrentHandler != "human" || session.SessionStatus != "open" {
 			t.Errorf("unexpected session fields: %+v", session)
+		}
+	})
+}
+
+// TestTicketCreationFormFlow verifies the multi-step ticket creation form wizard.
+func TestTicketCreationFormFlow(t *testing.T) {
+	store := newMockStore()
+	sender := &mockSender{}
+	handler := newTestHandlerWithStore("valid-token", sender, store)
+	ctx := context.Background()
+	phone := "15559876543"
+
+	// 1. Send "Hello" greeting. Should respond with "Create a ticket" button.
+	t.Run("Step 1: Greeting", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/webhook",
+			strings.NewReader(webhookBody(phone, "Alice", "Hello")))
+		rec := httptest.NewRecorder()
+		handler.HandleEvent(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		if len(sender.messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(sender.messages))
+		}
+		if !sender.messages[0].isButton {
+			t.Fatal("expected greeting reply to contain buttons")
+		}
+		if !strings.Contains(sender.messages[0].text, "help you today") {
+			t.Errorf("unexpected message text: %s", sender.messages[0].text)
+		}
+		// Reset sender messages
+		sender.messages = nil
+	})
+
+	// 2. Click "Create a ticket" button. Should set state to awaiting_pt_name and prompt "Name of your PT:".
+	t.Run("Step 2: Initiate Form", func(t *testing.T) {
+		body := `{
+			"object": "whatsapp_business_account",
+			"entry": [{
+				"changes": [{
+					"value": {
+						"messaging_product": "whatsapp",
+						"messages": [{
+							"from": "15559876543",
+							"id": "wamid.btn_ticket",
+							"type": "interactive",
+							"interactive": {
+								"type": "button_reply",
+								"button_reply": {"id": "btn_ticket", "title": "Create a ticket"}
+							}
+						}]
+					}
+				}]
+			}]
+		}`
+		req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.HandleEvent(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+
+		session, _ := store.GetActiveSession(ctx, phone)
+		if session == nil {
+			t.Fatal("expected session to exist")
+		}
+		if session.BotFlowState != "awaiting_pt_name" {
+			t.Errorf("expected state to be awaiting_pt_name, got %s", session.BotFlowState)
+		}
+		if len(sender.messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(sender.messages))
+		}
+		if sender.messages[0].text != "Name of your PT:" {
+			t.Errorf("expected prompt 'Name of your PT:', got: %s", sender.messages[0].text)
+		}
+		sender.messages = nil
+	})
+
+	// 3. User responds with their PT name. Should set state to awaiting_category and prompt with categories.
+	t.Run("Step 3: Provide PT Name", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/webhook",
+			strings.NewReader(webhookBody(phone, "Alice", "PT Jaya Abadi")))
+		rec := httptest.NewRecorder()
+		handler.HandleEvent(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+
+		session, _ := store.GetActiveSession(ctx, phone)
+		if session == nil {
+			t.Fatal("expected session to exist")
+		}
+		if session.TicketPtName != "PT Jaya Abadi" {
+			t.Errorf("expected TicketPtName to be saved as 'PT Jaya Abadi', got %s", session.TicketPtName)
+		}
+		if session.BotFlowState != "awaiting_category" {
+			t.Errorf("expected state to be awaiting_category, got %s", session.BotFlowState)
+		}
+		if len(sender.messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(sender.messages))
+		}
+		if !sender.messages[0].isButton || sender.messages[0].text != "Ticket Category" {
+			t.Errorf("expected button prompt 'Ticket Category', got: %+v", sender.messages[0])
+		}
+		sender.messages = nil
+	})
+
+	// 4. User taps/selects category button. Should set state to awaiting_message and prompt for message description.
+	t.Run("Step 4: Choose Category", func(t *testing.T) {
+		body := `{
+			"object": "whatsapp_business_account",
+			"entry": [{
+				"changes": [{
+					"value": {
+						"messaging_product": "whatsapp",
+						"messages": [{
+							"from": "15559876543",
+							"id": "wamid.btn_cat",
+							"type": "interactive",
+							"interactive": {
+								"type": "button_reply",
+								"button_reply": {"id": "cat_technical", "title": "Technical Support"}
+							}
+						}]
+					}
+				}]
+			}]
+		}`
+		req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.HandleEvent(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+
+		session, _ := store.GetActiveSession(ctx, phone)
+		if session == nil {
+			t.Fatal("expected session to exist")
+		}
+		if session.TicketCategory != "Technical Support" {
+			t.Errorf("expected TicketCategory to be 'Technical Support', got %s", session.TicketCategory)
+		}
+		if session.BotFlowState != "awaiting_message" {
+			t.Errorf("expected state to be awaiting_message, got %s", session.BotFlowState)
+		}
+		if len(sender.messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(sender.messages))
+		}
+		if sender.messages[0].text != "Message of the ticket:" {
+			t.Errorf("expected prompt 'Message of the ticket:', got: %s", sender.messages[0].text)
+		}
+		sender.messages = nil
+	})
+
+	// 5. User provides the message details. Should complete the ticket, reply, escalate handler to human, and reset state.
+	t.Run("Step 5: Provide Message", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/webhook",
+			strings.NewReader(webhookBody(phone, "Alice", "My internet is down.")))
+		rec := httptest.NewRecorder()
+		handler.HandleEvent(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+
+		session, _ := store.GetActiveSession(ctx, phone)
+		if session == nil {
+			t.Fatal("expected session to exist")
+		}
+		if session.TicketMessage != "My internet is down." {
+			t.Errorf("expected TicketMessage to be 'My internet is down.', got %s", session.TicketMessage)
+		}
+		if session.BotFlowState != "idle" {
+			t.Errorf("expected state to be reset to idle, got %s", session.BotFlowState)
+		}
+		if session.CurrentHandler != "human" {
+			t.Errorf("expected handler to be escalated to human, got %s", session.CurrentHandler)
+		}
+		if len(sender.messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(sender.messages))
+		}
+		expectedThanks := "Thankyou for your answer, we will check your ticket as soon as possible"
+		if sender.messages[0].text != expectedThanks {
+			t.Errorf("expected thanks message, got: %s", sender.messages[0].text)
 		}
 	})
 }
